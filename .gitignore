@@ -1,0 +1,39 @@
+# Python
+__pycache__/
+*.pyc
+*.egg-info/
+build/
+dist/
+
+# Environments
+.venv/
+venv/
+.env
+
+# Data -- everything in data/ is either fetched by a script or generated
+# locally; none of it belongs in version control, real or synthetic.
+data/imaging/*
+data/tabular/*
+data/literature/*
+data/synthetic_patients/*
+!data/imaging/.gitkeep
+!data/tabular/.gitkeep
+!data/literature/.gitkeep
+!data/synthetic_patients/.gitkeep
+!data/README.md
+
+# Chroma persistence
+*.sqlite3
+chroma/
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Test / tooling
+.pytest_cache/
+.ruff_cache/
+*.egg-info

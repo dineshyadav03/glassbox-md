@@ -1,0 +1,46 @@
+# Grouped by the pipeline phase that first needs them (see the project
+# brief's task list). Versions are minimums, not exact pins -- run
+# `pip freeze > requirements.lock.txt` after your first clean install and
+# commit that alongside this file for a reproducible environment.
+#
+# Only the Phase 0 group is installed as part of scaffolding; the rest are
+# listed now so the full shape of the environment is visible up front, but
+# are meant to be installed when you actually start that phase (several of
+# them -- spacy's model download, sentence-transformers' first model pull,
+# shap's native build -- are slow and better done deliberately, not as a
+# side effect of `pip install -r requirements.txt`).
+
+# --- Phase 0: scaffolding ---
+langgraph>=0.2
+python-dotenv>=1.0
+pydantic>=2.7
+
+# --- Phase 2: Document Parser Agent ---
+docling>=2.0
+pydicom>=2.4
+
+# --- Phase 3: Privacy Protection Agent ---
+presidio-analyzer>=2.2
+presidio-anonymizer>=2.2
+spacy>=3.7
+# after installing spacy: python -m spacy download en_core_web_lg
+
+# --- Phase 4: Medical Knowledge RAG Agent ---
+chromadb>=0.5
+sentence-transformers>=3.0
+biopython>=1.83  # Bio.Entrez, for the PubMed E-utilities API
+
+# --- Phase 5: Diagnostic Prediction Agent ---
+google-generativeai>=0.7
+openai>=1.30
+
+# --- Phase 6: Explainability Agent ---
+shap>=0.45
+scikit-learn>=1.4
+pandas>=2.2
+
+# --- Phase 8: UI ---
+chainlit>=1.1
+
+# --- Dev / testing ---
+pytest>=8.0
