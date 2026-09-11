@@ -29,11 +29,11 @@ not the reasoning behind it.
 
 ## Status
 
-**Phases 0-3 done.** Scaffolding, Data Preparation, Document Parser, and
-Privacy Protection are implemented and tested -- 48 tests passing,
-including an end-to-end check that planted fake PII in a synthetic
-document doesn't survive Parser + Privacy together. Agents for Phases 4-6
-(RAG, prediction, explainability) are not implemented yet.
+**Phases 0-4 done.** Scaffolding through the Medical Knowledge RAG Agent
+are implemented and tested -- 58 tests passing. The RAG agent's PubMed
+integration has been smoke-tested against the live E-utilities API, not
+just fixture data (see Design decisions below). Agents for Phases 5-6
+(prediction, explainability) are not implemented yet.
 
 ## Project structure
 
@@ -48,7 +48,10 @@ healthcare/
 │   └── agents/
 │       ├── data_preparation.py   unit conversion + terminology normalization (done)
 │       ├── document_parser.py    PDF (pdfplumber) + DICOM (pydicom), separate paths (done)
-│       └── privacy_protection.py NER redaction, lab extraction, DICOM tag stripping (done)
+│       ├── privacy_protection.py NER redaction, lab extraction, DICOM tag stripping (done)
+│       └── medical_knowledge_rag.py PubMed fetch + ChromaDB index/query (done)
+├── scripts/
+│   └── build_literature_index.py  offline: fetch PubMed, build the RAG index
 ├── data/
 │   ├── README.md              what goes in each subfolder, and what must never go there
 │   ├── imaging/                public/synthetic imaging data only
@@ -74,10 +77,21 @@ pytest
 ```
 
 `requirements.txt` lists every phase's dependencies up front so the shape
-of the environment is visible, but several groups (spaCy's language model,
-sentence-transformers' first model download, shap's native build) are slow
-and better installed deliberately when you reach that phase rather than as
-a side effect of one big install.
+of the environment is visible, but several groups (spaCy's language
+model, chromadb's first embedding-model download, shap's native build)
+are slow and better installed deliberately when you reach that phase
+rather than as a side effect of one big install.
+
+To make the RAG agent actually return results (Phase 4), build the
+literature index once, offline:
+
+```bash
+python scripts/build_literature_index.py
+```
+
+This fetches PubMed abstracts for the project's two target conditions
+and indexes them into `data/literature/chroma/`. Takes a few minutes;
+safe to re-run.
 
 ## Design decisions worth knowing
 
@@ -145,6 +159,25 @@ a side effect of one big install.
   text. First test write used exactly that number and silently detected
   nothing. Fixed by using a realistic-but-arbitrary number instead;
   see `test_redacts_ssn` in `tests/test_privacy_protection.py`.
+- **RAG embeddings: ChromaDB's bundled `DefaultEmbeddingFunction`, not
+  sentence-transformers as the roadmap originally named.** Installing
+  chromadb alone already pulls in `onnxruntime`, and its default
+  embedding function runs the same class of model (an ONNX
+  all-MiniLM-L6-v2, ~80MB, downloaded once and cached) that
+  sentence-transformers would have used via torch. Confirmed by actually
+  loading it and embedding text before committing to this, not assumed --
+  see the module docstring in `medical_knowledge_rag.py`.
+- **PubMed fetching: the E-utilities REST API directly (stdlib
+  `urllib`/`xml.etree`), not biopython.** Biopython's `Entrez` module
+  wraps the same two HTTP endpoints (esearch, efetch); calling them
+  directly avoids a dependency for two URLs. Smoke-tested against the
+  live API, not just parsed from fixture XML -- see
+  `scripts/build_literature_index.py`.
+- **Literature retrieval is a build step, not a live pipeline call.**
+  `scripts/build_literature_index.py` fetches and indexes PubMed
+  abstracts once, offline; the agent only ever queries the already-built
+  ChromaDB collection at pipeline run time. Re-running the script is safe
+  -- indexing uses upsert, so existing PMIDs update in place.
 - **Scope: two conditions, not general medicine.** The Data Preparation
   Agent's lab-conversion table (glucose, cholesterol panel, triglycerides,
   creatinine, HbA1c) and terminology map are scoped to type 2 diabetes and

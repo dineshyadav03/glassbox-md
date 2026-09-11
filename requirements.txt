@@ -36,8 +36,13 @@ spacy>=3.7
 
 # --- Phase 4: Medical Knowledge RAG Agent ---
 chromadb>=0.5
-sentence-transformers>=3.0
-biopython>=1.83  # Bio.Entrez, for the PubMed E-utilities API
+# No sentence-transformers, no biopython -- see agents/medical_knowledge_rag.py's
+# module docstring. chromadb's bundled DefaultEmbeddingFunction already uses
+# an ONNX MiniLM model via onnxruntime (which chromadb installs on its own),
+# so a second ML runtime (torch) isn't needed for "local embeddings, no
+# per-call API cost." PubMed fetching uses the E-utilities REST API directly
+# via the standard library -- biopython's Entrez module is a thin wrapper
+# over the same two HTTP endpoints.
 
 # --- Phase 5: Diagnostic Prediction Agent ---
 google-generativeai>=0.7
