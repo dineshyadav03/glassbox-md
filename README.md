@@ -29,12 +29,11 @@ not the reasoning behind it.
 
 ## Status
 
-**Phase 0 (scaffolding) -- done.** **Phase 1 (Data Preparation Agent) --
-done.** Unit conversion and terminology normalization for two
-cardiometabolic conditions (type 2 diabetes, coronary artery disease) are
-implemented and tested (`src/glassbox_md/agents/data_preparation.py`, 16
-tests). Agents for Phases 2-6 (parser, privacy, RAG, prediction,
-explainability) are not implemented yet.
+**Phases 0-2 done.** Scaffolding, the Data Preparation Agent, and the
+Document Parser Agent (PDF via pdfplumber, DICOM via pydicom, as two
+separate code paths) are implemented and tested -- 31 tests passing.
+Agents for Phases 3-6 (privacy, RAG, prediction, explainability) are not
+implemented yet.
 
 ## Project structure
 
@@ -47,7 +46,8 @@ healthcare/
 │   ├── audit.py                shared helper for building audit log entries
 │   ├── disclaimer.py          the intended-use disclaimer, defined once
 │   └── agents/
-│       └── data_preparation.py   unit conversion + terminology normalization (done)
+│       ├── data_preparation.py   unit conversion + terminology normalization (done)
+│       └── document_parser.py    PDF (pdfplumber) + DICOM (pydicom), separate paths (done)
 ├── data/
 │   ├── README.md              what goes in each subfolder, and what must never go there
 │   ├── imaging/                public/synthetic imaging data only
@@ -105,6 +105,20 @@ a side effect of one big install.
   `test_agent_preserves_other_stages_status` in
   `tests/test_data_preparation.py` -- when you write Phase 2's agent,
   write the equivalent regression test before assuming this works.
+- **PDF parsing: pdfplumber, not Marker/Docling as originally pitched.**
+  Both of those are ML-based parsers built for messy scanned documents and
+  pull in torch as a transitive dependency -- a multi-hundred-MB-to-GB
+  install for what this MVP needs, which is text extraction from synthetic,
+  born-digital PDFs this project generates itself. DICOM still gets its
+  own separate path via pydicom, per the critique's finding that neither
+  Marker nor Docling reads DICOM at all regardless of which one you'd
+  picked. See `agents/document_parser.py`'s module docstring for the
+  swap-back path if this project is ever pointed at real scanned documents.
+- **DICOM pixel data never enters LangGraph state.** `parse_dicom()`
+  returns a shape/dtype summary, not the raw array -- keeping large binary
+  imaging data out of the state dict avoids the same unbounded-PHI-copy
+  risk the critique raised about LangGraph checkpointing. Anything that
+  needs actual pixel data reads it from the file path directly.
 - **Scope: two conditions, not general medicine.** The Data Preparation
   Agent's lab-conversion table (glucose, cholesterol panel, triglycerides,
   creatinine, HbA1c) and terminology map are scoped to type 2 diabetes and

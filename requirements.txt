@@ -16,8 +16,14 @@ python-dotenv>=1.0
 pydantic>=2.7
 
 # --- Phase 2: Document Parser Agent ---
-docling>=2.0
+# pdfplumber, not Marker/Docling as originally pitched -- both of those are
+# ML-based parsers for messy scanned documents and pull in torch as a
+# transitive dependency. This MVP's PDFs are synthetic and born-digital
+# (see data/synthetic_patients/), so a non-ML text/table extractor is a
+# better fit; see the module docstring in agents/document_parser.py.
+pdfplumber>=0.11
 pydicom>=2.4
+numpy>=1.26  # pydicom needs it for .pixel_array
 
 # --- Phase 3: Privacy Protection Agent ---
 presidio-analyzer>=2.2
@@ -44,3 +50,4 @@ chainlit>=1.1
 
 # --- Dev / testing ---
 pytest>=8.0
+reportlab>=4.0  # generates a real synthetic PDF fixture at test time (Phase 2)
