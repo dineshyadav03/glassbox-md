@@ -29,11 +29,11 @@ not the reasoning behind it.
 
 ## Status
 
-**Phases 0-2 done.** Scaffolding, the Data Preparation Agent, and the
-Document Parser Agent (PDF via pdfplumber, DICOM via pydicom, as two
-separate code paths) are implemented and tested -- 31 tests passing.
-Agents for Phases 3-6 (privacy, RAG, prediction, explainability) are not
-implemented yet.
+**Phases 0-3 done.** Scaffolding, Data Preparation, Document Parser, and
+Privacy Protection are implemented and tested -- 48 tests passing,
+including an end-to-end check that planted fake PII in a synthetic
+document doesn't survive Parser + Privacy together. Agents for Phases 4-6
+(RAG, prediction, explainability) are not implemented yet.
 
 ## Project structure
 
@@ -47,7 +47,8 @@ healthcare/
 │   ├── disclaimer.py          the intended-use disclaimer, defined once
 │   └── agents/
 │       ├── data_preparation.py   unit conversion + terminology normalization (done)
-│       └── document_parser.py    PDF (pdfplumber) + DICOM (pydicom), separate paths (done)
+│       ├── document_parser.py    PDF (pdfplumber) + DICOM (pydicom), separate paths (done)
+│       └── privacy_protection.py NER redaction, lab extraction, DICOM tag stripping (done)
 ├── data/
 │   ├── README.md              what goes in each subfolder, and what must never go there
 │   ├── imaging/                public/synthetic imaging data only
@@ -119,6 +120,31 @@ a side effect of one big install.
   imaging data out of the state dict avoids the same unbounded-PHI-copy
   risk the critique raised about LangGraph checkpointing. Anything that
   needs actual pixel data reads it from the file path directly.
+- **Structured lab extraction lives in the Privacy agent, not the Parser
+  or Data Prep agent.** Data Preparation (Phase 1) was built expecting
+  `anonymized_patient_data["labs"]` to already be structured as
+  `{"glucose": {"value": 126, "unit": "mg/dL"}}`. Something has to turn
+  pdfplumber's raw extracted tables into that shape, and the Privacy agent
+  is the natural place: it already has to scan the same raw content to
+  redact it. See the module docstring in `privacy_protection.py` for the
+  full reasoning.
+- **"HIPAA compliance" and "differential privacy" are gone from this
+  agent's naming**, replaced with what it actually does: NER-based
+  redaction (Presidio + spaCy) for 8 of the 18 HIPAA Safe Harbor
+  identifiers, a custom pattern recognizer for medical record numbers, and
+  DICOM tag stripping for device/institution identifiers. Coverage gaps
+  (biometrics, face photos, vehicle identifiers) are listed explicitly in
+  the module docstring rather than implied away by a blanket "compliant"
+  claim -- per the privacy critique.
+- **spaCy model: `en_core_web_sm`, not `_lg`.** ~15MB vs ~587MB, lower
+  NER recall on unusual names -- fine for this MVP's synthetic test
+  corpus, not a claim about production-grade recall on messy real text.
+- **A real gotcha found while testing:** Presidio's `US_SSN` recognizer
+  explicitly denylists `123-45-6789` -- the one SSN everyone reaches for
+  in a tutorial -- specifically so it doesn't false-positive on sample
+  text. First test write used exactly that number and silently detected
+  nothing. Fixed by using a realistic-but-arbitrary number instead;
+  see `test_redacts_ssn` in `tests/test_privacy_protection.py`.
 - **Scope: two conditions, not general medicine.** The Data Preparation
   Agent's lab-conversion table (glucose, cholesterol panel, triglycerides,
   creatinine, HbA1c) and terminology map are scoped to type 2 diabetes and
