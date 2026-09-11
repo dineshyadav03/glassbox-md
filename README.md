@@ -29,10 +29,12 @@ not the reasoning behind it.
 
 ## Status
 
-**Phase 0 (scaffolding) -- in progress.** Project structure, the revised
-pipeline state schema, the disclaimer, and data-sourcing docs are in place.
-Agents 1-6 are not implemented yet -- `src/glassbox_md/agents/` is
-currently just an import path waiting for Phase 1.
+**Phase 0 (scaffolding) -- done.** **Phase 1 (Data Preparation Agent) --
+done.** Unit conversion and terminology normalization for two
+cardiometabolic conditions (type 2 diabetes, coronary artery disease) are
+implemented and tested (`src/glassbox_md/agents/data_preparation.py`, 16
+tests). Agents for Phases 2-6 (parser, privacy, RAG, prediction,
+explainability) are not implemented yet.
 
 ## Project structure
 
@@ -42,8 +44,10 @@ healthcare/
 │   └── reference-images/     the 11 original pitch screenshots this project is built from
 ├── src/glassbox_md/
 │   ├── state.py               MedicalPipelineState -- the LangGraph state schema
+│   ├── audit.py                shared helper for building audit log entries
 │   ├── disclaimer.py          the intended-use disclaimer, defined once
-│   └── agents/                the six pipeline agents (empty until Phase 1+)
+│   └── agents/
+│       └── data_preparation.py   unit conversion + terminology normalization (done)
 ├── data/
 │   ├── README.md              what goes in each subfolder, and what must never go there
 │   ├── imaging/                public/synthetic imaging data only
@@ -91,3 +95,21 @@ a side effect of one big install.
   pipeline -- each agent renders as its own collapsible step with its own
   output, which is a better fit for a project about showing *how* an
   answer was reached than a generic chat widget or form-builder is.
+- **`stage_status` merge gotcha, found while building Phase 1.** Only
+  `audit_log` has a LangGraph reducer (`operator.add`, so it accumulates
+  automatically). `stage_status` doesn't -- a node that returned
+  `{"stage_status": {"data_preparation": ...}}` directly would silently
+  wipe out every other stage's recorded status, not merge into it. Every
+  agent must build its update through `update_stage_status()` in
+  `state.py` instead. Covered by
+  `test_agent_preserves_other_stages_status` in
+  `tests/test_data_preparation.py` -- when you write Phase 2's agent,
+  write the equivalent regression test before assuming this works.
+- **Scope: two conditions, not general medicine.** The Data Preparation
+  Agent's lab-conversion table (glucose, cholesterol panel, triglycerides,
+  creatinine, HbA1c) and terminology map are scoped to type 2 diabetes and
+  coronary artery disease specifically, chosen to match the UCI datasets
+  already planned for the RAG and SHAP-demo phases. An unrecognized lab
+  test raises `UnknownLabTestError` rather than silently passing the value
+  through unconverted -- expanding scope later means adding entries to
+  `LAB_CONVERSIONS`, not relaxing that check.

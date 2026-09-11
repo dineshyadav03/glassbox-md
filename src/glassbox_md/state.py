@@ -150,3 +150,22 @@ def new_stage_status() -> dict[str, StageResult]:
     """A fresh `stage_status` dict with every stage marked pending, for
     initializing pipeline runs."""
     return {name: {"status": "pending", "message": None} for name in STAGE_NAMES}
+
+
+def update_stage_status(
+    state: MedicalPipelineState, stage: str, result: StageResult
+) -> dict[str, StageResult]:
+    """Return a full `stage_status` dict with `stage` set to `result`,
+    merged with whatever the other stages already recorded.
+
+    `stage_status` has no LangGraph reducer -- unlike `audit_log`, which
+    accumulates automatically via its `operator.add` annotation, a plain
+    dict field is simply overwritten by the latest node's return value. A
+    node that returned `{"stage_status": {stage: result}}` directly would
+    silently erase every other stage's recorded status, not merge into it.
+    Every agent should build its `stage_status` update through this helper
+    instead of constructing the dict by hand.
+    """
+    merged = dict(state.get("stage_status") or new_stage_status())
+    merged[stage] = result
+    return merged
