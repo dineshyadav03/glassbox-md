@@ -29,11 +29,10 @@ not the reasoning behind it.
 
 ## Status
 
-**Phases 0-4 done.** Scaffolding through the Medical Knowledge RAG Agent
-are implemented and tested -- 58 tests passing. The RAG agent's PubMed
-integration has been smoke-tested against the live E-utilities API, not
-just fixture data (see Design decisions below). Agents for Phases 5-6
-(prediction, explainability) are not implemented yet.
+**Phases 0-5 done.** Scaffolding through the Diagnostic Prediction Agent
+are implemented and tested -- 68 tests passing, including a live call
+through OpenRouter's free router that returned a real structured
+differential end to end. Only Phase 6 (Explainability) remains.
 
 ## Project structure
 
@@ -49,7 +48,8 @@ healthcare/
 │       ├── data_preparation.py   unit conversion + terminology normalization (done)
 │       ├── document_parser.py    PDF (pdfplumber) + DICOM (pydicom), separate paths (done)
 │       ├── privacy_protection.py NER redaction, lab extraction, DICOM tag stripping (done)
-│       └── medical_knowledge_rag.py PubMed fetch + ChromaDB index/query (done)
+│       ├── medical_knowledge_rag.py PubMed fetch + ChromaDB index/query (done)
+│       └── diagnostic_prediction.py Structured differential via OpenRouter (done)
 ├── scripts/
 │   └── build_literature_index.py  offline: fetch PubMed, build the RAG index
 ├── data/
@@ -178,6 +178,36 @@ safe to re-run.
   abstracts once, offline; the agent only ever queries the already-built
   ChromaDB collection at pipeline run time. Re-running the script is safe
   -- indexing uses upsert, so existing PMIDs update in place.
+- **Diagnostic Prediction Agent output is a ranked differential, never
+  "the diagnosis."** `DifferentialCondition` entries carry a likelihood
+  and evidence citations, not a single verdict, per the clinical-safety
+  critique. Abstention is two-stage: before the model is even called (no
+  clinical data or literature to reason over) and after (confidence below
+  `CONFIDENCE_THRESHOLD`) -- a low-confidence result is surfaced as
+  "insufficient evidence," not dressed up as a normal answer.
+- **Model provider: OpenRouter's free router, after two dead ends.** Built
+  first against Gemini (`google-genai`) -- worked in code, but a real key
+  hit a persistent `API_KEY_SERVICE_BLOCKED` permission error from Google
+  that survived enabling the API and checking billing. Moved to OpenAI
+  next; it has no meaningful free tier (billing required even for trial
+  credit). Landed on OpenRouter's `openrouter/free` router: a real hosted
+  API (unlike a local Ollama model, which can't be reached by a deployed
+  app), genuinely free, auto-selecting whichever underlying model
+  currently supports both image input and structured output. The
+  structured-output schema (`ModelDifferentialResponse`) didn't change
+  across any of the three attempts -- only the client configuration did.
+  Because the free router can land on any model, the agent uses plain
+  JSON mode plus hand validation instead of strict schema-constrained
+  decoding, with the required shape spelled out in the system prompt.
+  Live-verified end to end, not just mocked: `test_live_openrouter_call_
+  smoke_test` makes a real call and got back a valid differential (~70s,
+  free-tier routing overhead -- worth knowing if this ever needs to feel
+  fast).
+- **Imaging is best-effort, not required.** DICOM pixel data converts to
+  PNG for the multimodal prompt when available; a missing or unreadable
+  image degrades to a text-only call rather than failing, since the two
+  MVP conditions (type 2 diabetes, coronary artery disease) are primarily
+  lab/history-driven rather than imaging-diagnosed.
 - **Scope: two conditions, not general medicine.** The Data Preparation
   Agent's lab-conversion table (glucose, cholesterol panel, triglycerides,
   creatinine, HbA1c) and terminology map are scoped to type 2 diabetes and
