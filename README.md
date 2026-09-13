@@ -29,10 +29,14 @@ not the reasoning behind it.
 
 ## Status
 
-**Phases 0-5 done.** Scaffolding through the Diagnostic Prediction Agent
-are implemented and tested -- 68 tests passing, including a live call
-through OpenRouter's free router that returned a real structured
-differential end to end. Only Phase 6 (Explainability) remains.
+**All six agents done (Phases 0-6).** 83 tests passing, including a live
+call through OpenRouter's free router that returned a real structured
+differential end to end. What's left is entirely integration work, not
+new agent logic: Phase 7 (wire the six nodes into an actual LangGraph
+`StateGraph` with conditional routing -- each agent has been built and
+tested standalone so far, not yet connected into one graph), Phase 8
+(Chainlit UI), and Phase 9 (end-to-end validation across synthetic
+cases).
 
 ## Project structure
 
@@ -49,7 +53,8 @@ healthcare/
 │       ├── document_parser.py    PDF (pdfplumber) + DICOM (pydicom), separate paths (done)
 │       ├── privacy_protection.py NER redaction, lab extraction, DICOM tag stripping (done)
 │       ├── medical_knowledge_rag.py PubMed fetch + ChromaDB index/query (done)
-│       └── diagnostic_prediction.py Structured differential via OpenRouter (done)
+│       ├── diagnostic_prediction.py Structured differential via OpenRouter (done)
+│       └── explainability.py       Citation-grounded narrative + real SHAP demo (done)
 ├── scripts/
 │   └── build_literature_index.py  offline: fetch PubMed, build the RAG index
 ├── data/
@@ -208,6 +213,28 @@ safe to re-run.
   image degrades to a text-only call rather than failing, since the two
   MVP conditions (type 2 diabetes, coronary artery disease) are primarily
   lab/history-driven rather than imaging-diagnosed.
+- **The Explainability Agent's SHAP demo is deliberately not applied to
+  the current patient.** It runs on scikit-learn's built-in
+  `load_diabetes` dataset (no network fetch), clearly labeled in the
+  report as a general capability demonstration. That dataset's features
+  are scaled by sklearn with no exposed inverse transform, so forcing
+  this project's real mmol/L lab values through it would produce SHAP
+  numbers that look precise but mean nothing -- exactly the
+  "technically incorrect but authoritative-looking" failure mode this
+  whole project exists to avoid. Explaining this patient's actual case
+  is what the citation-grounded narrative is for; the SHAP demo proves
+  the technique works on a real model, honestly scoped as a demo.
+- **`disagreement_flagged` is a real signal, not a placeholder.** It's
+  true when the model's own top two differential hypotheses sit within
+  `DISAGREEMENT_MARGIN` (0.15) of each other, or when the Diagnostic
+  Prediction Agent already abstained. It is deliberately NOT a
+  comparison between the SHAP demo and the patient's differential --
+  those run over incompatible feature spaces on unrelated data, and
+  manufacturing a cross-check between them would itself be a
+  technically-incorrect comparison dressed up as insight.
+- **`clinician_confirmed` always starts `False`.** This agent produces a
+  report for review, not a released result -- setting it `True` is a
+  UI/human action (Phase 8), never something an agent decides for itself.
 - **Scope: two conditions, not general medicine.** The Data Preparation
   Agent's lab-conversion table (glucose, cholesterol panel, triglycerides,
   creatinine, HbA1c) and terminology map are scoped to type 2 diabetes and
