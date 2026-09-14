@@ -78,7 +78,7 @@ reached a real OpenRouter call with the image attached (a random-noise
 test image, honestly -- it correctly returned zero confidence, which is
 the right answer for meaningless pixel data, not a broken fix).
 
-**Phase 9 validation** (`tests/test_validation.py`) ran 9 diverse
+**Phase 9 validation** (`tests/test_validation.py`) runs 14 diverse
 synthetic cases through the real compiled pipeline -- not just the one
 happy path Phase 7's own capstone test covers: a clean diabetes case, a
 clean coronary-artery-disease case, an implausible lab value (flagged,
@@ -87,12 +87,35 @@ genuinely empty document (produces a real "insufficient evidence" report
 instead of dying partway through -- see the imaging-only fix above), a
 DICOM image alongside lab data (PHI-bearing tags confirmed stripped), an
 imaging-only case (reaches a full report instead of halting), a
-close-call differential (correctly flagged for review), and a case with
-five different planted PHI-shaped identifiers (name, DOB, SSN, MRN,
-DICOM patient name) swept against the *entire* downstream state as one
+close-call differential (correctly flagged for review), a case with five
+different planted PHI-shaped identifiers (name, DOB, SSN, MRN, DICOM
+patient name) swept against the *entire* downstream state as one
 serialized blob -- not just checked in one field the way Phase 3's own
 test did -- confirming none of them survive anywhere past the Privacy
-Protection Agent.
+Protection Agent, and five more added after a second pass specifically
+looking for gaps the first nine didn't cover:
+
+- **Multiple DICOM files uploaded together** -- both get parsed and
+  anonymized, but only the *first* one's path is ever attached to the
+  actual model call (`imaging[0]` in `diagnostic_prediction.py`). Not a
+  crash, not silently wrong -- a real, now-documented scope limit, found
+  the same way the imaging-only and malformed-response issues were:
+  asking "what actually happens here" instead of assuming.
+- **Multiple PDFs uploaded together** (a history note + a separate lab
+  report) -- confirms Data Preparation correctly aggregates labs and
+  history text across every parsed document, not just the first.
+- **Evidence spanning both target conditions at once** (elevated glucose
+  *and* elevated cholesterol, history mentioning both diagnoses) --
+  confirms the differential isn't artificially forced onto a single
+  condition when the evidence itself doesn't point to just one.
+- **A corrupt file alongside a valid one** -- the Document Parser
+  correctly returns `needs_review` (partial success) rather than
+  `failed`, and the pipeline still reaches a full report using the file
+  that did parse.
+- **Retrieved literature the model never cites** -- confirms the
+  Explainability Agent's citation resolver returns an empty citation
+  list rather than erroring or inventing a citation, holding at the full
+  pipeline level, not just in `explainability.py`'s own unit tests.
 
 **What the live verification actually confirmed** (a real synthetic PDF,
 uploaded through the running app, no mocks): all six agents rendered as
@@ -139,7 +162,7 @@ healthcare/
 ├── tests/
 │   ├── test_state.py           tests for the privacy-boundary runtime guard
 │   ├── test_pipeline.py        conditional routing + full end-to-end graph test
-│   └── test_validation.py      Phase 9: 9 diverse synthetic cases, full-state PII sweep
+│   └── test_validation.py      Phase 9: 14 diverse synthetic cases, full-state PII sweep
 ├── requirements.txt           dependencies, grouped by the phase that introduces them
 ├── pyproject.toml             project metadata + pytest config
 └── .env.example                copy to .env and fill in API keys (never commit .env)
@@ -210,6 +233,11 @@ shouldn't have to read thirty bullet points to find the honest gaps:
 - **No case-persistence layer.** Each chat session is one ephemeral run;
   "Confirm reviewed by clinician" sends a message and nothing else --
   there's no stored record for it to update yet.
+- **Only one image reaches the model, even if several are uploaded.**
+  Every uploaded DICOM gets parsed and anonymized, but Diagnostic
+  Prediction only ever attaches the first one (`imaging[0]`) to the
+  actual multimodal call -- a real scope limit, not a crash, confirmed
+  by `test_case_multiple_dicom_files_only_first_reaches_the_model`.
 - **The LLM provider is a free-tier router** (`openrouter/free`), chosen
   after two dead ends with paid/blocked providers (see below). Expect
   ~70s latency and don't expect a fixed model identity from run to run --

@@ -108,6 +108,25 @@ def _fake_llm(confidence=0.8, conditions=None):
     return caller
 
 
+def _recording_fake_llm(confidence=0.8, conditions=None):
+    """Like _fake_llm, but remembers the (prompt, image_path) it was
+    actually called with -- for cases that need to verify which input
+    reached the model, not just that a report came back."""
+    calls = []
+
+    def caller(prompt, image_path):
+        calls.append((prompt, image_path))
+        return ModelDifferentialResponse(
+            differential=conditions
+            or [DifferentialCondition(condition="type 2 diabetes", likelihood=confidence, supporting_evidence=["x"])],
+            overall_confidence=confidence,
+            reasoning_notes="synthetic validation reasoning",
+        )
+
+    caller.calls = calls
+    return caller
+
+
 def _rag_collection(tmp_path):
     return build_literature_collection(
         [
@@ -316,3 +335,124 @@ def test_case_planted_pii_absent_from_entire_final_state(tmp_path):
         assert value not in serialized, f"{label} leaked into downstream state: {value!r}"
 
     assert result["raw_input_paths"] == []  # the Phase 0 leak fix, exercised end to end again
+
+
+# --- Case 10: multiple DICOM files -- only the first reaches the model ----
+
+def test_case_multiple_dicom_files_only_first_reaches_the_model(tmp_path):
+    """Both images are parsed, anonymized, and kept in state -- but
+    diagnostic_prediction.py's `imaging[0]["source_path"]` means only the
+    first ever gets attached to the actual model call. This documents
+    that as observed, current behavior (not a crash, not silently wrong
+    -- just a real scope limit worth knowing), the same way the imaging-
+    only and malformed-response fixes started as "what actually happens
+    here" questions rather than assumptions."""
+    dicom_a = _make_dicom(tmp_path, "scan_a.dcm", patient_name="A^Patient")
+    dicom_b = _make_dicom(tmp_path, "scan_b.dcm", patient_name="B^Patient")
+    caller = _recording_fake_llm(0.7)
+    graph = build_pipeline_graph(llm_caller=caller, rag_collection=_rag_collection(tmp_path))
+
+    result = graph.invoke(_initial_state([dicom_a, dicom_b]))
+
+    # Both images made it through parsing/anonymization...
+    imaging = result["anonymized_patient_data"]["imaging"]
+    assert len(imaging) == 2
+    assert all("PatientName" not in entry["metadata"] for entry in imaging)
+    assert result["final_explainable_report"] is not None
+
+    # ...but only the first was actually sent to the model.
+    assert len(caller.calls) == 1
+    _prompt, image_path_used = caller.calls[0]
+    assert image_path_used == dicom_a
+
+
+# --- Case 11: multiple PDFs -- content aggregates across all of them ------
+
+def test_case_multiple_pdfs_aggregate_content(tmp_path):
+    history_pdf = _make_pdf(tmp_path, "history.pdf", ["History: Patient has type 2 diabetes, reports fatigue."])
+    labs_pdf = _make_pdf(
+        tmp_path, "labs.pdf", [], table=[["Test", "Result", "Units"], ["Hemoglobin A1c", "8.0", "%"]]
+    )
+    graph = build_pipeline_graph(llm_caller=_fake_llm(0.8), rag_collection=_rag_collection(tmp_path))
+
+    result = graph.invoke(_initial_state([history_pdf, labs_pdf]))
+
+    structured = result["structured_clinical_data"]
+    assert "type 2 diabetes" in structured["history_text"]
+    # 8.0% converts to mmol/mol via the IFCC formula (Phase 1) -- check
+    # the preserved original value/unit, not the canonical one, so this
+    # test isn't coupled to that conversion's exact constant.
+    hba1c = structured["labs"]["hemoglobin_a1c"]
+    assert hba1c["original_value"] == 8.0
+    assert hba1c["original_unit"] == "%"
+    assert result["final_explainable_report"] is not None
+
+
+# --- Case 12: evidence spanning both target conditions ---------------------
+
+def test_case_mixed_condition_evidence_considers_both(tmp_path):
+    table = [
+        ["Test", "Result", "Units"],
+        ["Glucose", "190", "mg/dL"],
+        ["Total Cholesterol", "270", "mg/dL"],
+    ]
+    pdf = _make_pdf(
+        tmp_path,
+        "c12.pdf",
+        ["History: Patient has type 2 diabetes and coronary artery disease."],
+        table=table,
+    )
+    conditions = [
+        DifferentialCondition(condition="type 2 diabetes", likelihood=0.8, supporting_evidence=["glucose elevated"]),
+        DifferentialCondition(
+            condition="coronary artery disease", likelihood=0.6, supporting_evidence=["cholesterol elevated"]
+        ),
+    ]
+    graph = build_pipeline_graph(llm_caller=_fake_llm(0.8, conditions), rag_collection=_rag_collection(tmp_path))
+
+    result = graph.invoke(_initial_state([pdf]))
+
+    labs = result["structured_clinical_data"]["labs"]
+    assert "glucose" in labs and "total_cholesterol" in labs
+    differential_conditions = {c["condition"] for c in result["diagnostic_prediction_result"]["differential"]}
+    assert differential_conditions == {"type 2 diabetes", "coronary artery disease"}
+
+
+# --- Case 13: a corrupt file alongside a valid one degrades, not fails ----
+
+def test_case_corrupt_dicom_alongside_valid_pdf_degrades_not_fails(tmp_path):
+    table = [["Test", "Result", "Units"], ["Glucose", "180", "mg/dL"]]
+    pdf = _make_pdf(tmp_path, "c13.pdf", ["History: Patient has type 2 diabetes."], table=table)
+    corrupt_dicom = tmp_path / "corrupt.dcm"
+    corrupt_dicom.write_bytes(b"not a real dicom file")
+    graph = build_pipeline_graph(llm_caller=_fake_llm(0.8), rag_collection=_rag_collection(tmp_path))
+
+    result = graph.invoke(_initial_state([pdf, str(corrupt_dicom)]))
+
+    assert result["stage_status"]["document_parser"]["status"] == "needs_review"
+    assert len(result["extracted_document_content"]["parse_errors"]) == 1
+    assert result["final_explainable_report"] is not None
+
+
+# --- Case 14: retrieved literature the model never cites is dropped, not an error
+
+def test_case_uncited_literature_produces_empty_citations_not_an_error(tmp_path):
+    """RAG succeeds and retrieves real literature, but the (fake) model's
+    supporting_evidence never references any of it by [source_id]. The
+    Explainability agent's citation resolver only surfaces sources that
+    were actually cited -- confirming that holds at the full-pipeline
+    level, not just in explainability.py's own unit tests."""
+    table = [["Test", "Result", "Units"], ["Glucose", "150", "mg/dL"]]
+    pdf = _make_pdf(tmp_path, "c14.pdf", ["History: Patient has type 2 diabetes."], table=table)
+    conditions = [
+        DifferentialCondition(
+            condition="type 2 diabetes", likelihood=0.7, supporting_evidence=["glucose is elevated"]  # no [source_id] reference
+        )
+    ]
+    graph = build_pipeline_graph(llm_caller=_fake_llm(0.7, conditions), rag_collection=_rag_collection(tmp_path))
+
+    result = graph.invoke(_initial_state([pdf]))
+
+    assert result["rag_literature_context"], "RAG should have retrieved something to not-cite"
+    assert result["final_explainable_report"]["citations"] == []
+    assert result["stage_status"]["explainability"]["status"] == "ok"
