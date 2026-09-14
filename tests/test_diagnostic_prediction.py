@@ -23,11 +23,14 @@ from pydicom.uid import ExplicitVRLittleEndian, generate_uid
 # calls load_dotenv() itself) ever runs.
 load_dotenv()
 
+from openai import APIConnectionError, AuthenticationError
+
 from glassbox_md.agents.diagnostic_prediction import (
     CONFIDENCE_THRESHOLD,
     DifferentialCondition,
     ModelDifferentialResponse,
     _build_prompt,
+    _call_openrouter,
     _dicom_to_png_bytes,
     diagnostic_prediction_agent,
 )
@@ -44,6 +47,76 @@ def _base_state(**overrides):
     }
     state.update(overrides)
     return state
+
+
+# --- _call_openrouter retry behavior ----------------------------------------
+
+def _fake_request():
+    import httpx
+
+    return httpx.Request("POST", "https://openrouter.ai/api/v1/chat/completions")
+
+
+def _fake_http_response(status_code):
+    import httpx
+
+    return httpx.Response(status_code, request=_fake_request())
+
+
+class _FakeCompletions:
+    def __init__(self, responses):
+        self._responses = list(responses)
+        self.call_count = 0
+
+    def create(self, **kwargs):
+        self.call_count += 1
+        result = self._responses.pop(0)
+        if isinstance(result, Exception):
+            raise result
+        return result
+
+
+class _FakeClient:
+    def __init__(self, responses):
+        self.chat = type("_Chat", (), {"completions": _FakeCompletions(responses)})()
+
+
+def _fake_completion(content):
+    from types import SimpleNamespace
+
+    return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=content))])
+
+
+def test_call_openrouter_retries_transient_errors_then_succeeds():
+    responses = [
+        APIConnectionError(request=_fake_request()),
+        APIConnectionError(request=_fake_request()),
+        _fake_completion('{"differential": []}'),
+    ]
+    client = _FakeClient(responses)
+
+    result = _call_openrouter(client, "openrouter/free", [{"role": "user", "content": "hi"}])
+
+    assert result == '{"differential": []}'
+    assert client.chat.completions.call_count == 3
+
+
+def test_call_openrouter_does_not_retry_auth_errors():
+    client = _FakeClient([AuthenticationError("blocked", response=_fake_http_response(401), body=None)])
+
+    with pytest.raises(AuthenticationError):
+        _call_openrouter(client, "openrouter/free", [{"role": "user", "content": "hi"}])
+
+    assert client.chat.completions.call_count == 1
+
+
+def test_call_openrouter_gives_up_after_max_attempts():
+    client = _FakeClient([APIConnectionError(request=_fake_request()) for _ in range(5)])
+
+    with pytest.raises(APIConnectionError):
+        _call_openrouter(client, "openrouter/free", [{"role": "user", "content": "hi"}])
+
+    assert client.chat.completions.call_count == 3
 
 
 def _fake_response(confidence=0.8, conditions=None):

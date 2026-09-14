@@ -11,6 +11,10 @@
 # side effect of `pip install -r requirements.txt`).
 
 # --- Phase 0: scaffolding ---
+# langgraph is listed here since the state schema (state.py) is a Phase 0
+# artifact, but it wasn't actually installed/needed until Phase 7 -- every
+# agent from Phase 1-6 is a standalone function operating on a plain dict,
+# not a wired-up graph node, until pipeline.py connects them.
 langgraph>=0.2
 python-dotenv>=1.0
 pydantic>=2.7
@@ -56,6 +60,7 @@ chromadb>=0.5
 # See the module docstring in agents/diagnostic_prediction.py for the
 # full account.
 openai>=1.50
+tenacity>=8.2  # retry/backoff around the OpenRouter call specifically (Phase 7)
 
 # --- Phase 6: Explainability Agent ---
 shap>=0.45

@@ -29,14 +29,14 @@ not the reasoning behind it.
 
 ## Status
 
-**All six agents done (Phases 0-6).** 83 tests passing, including a live
-call through OpenRouter's free router that returned a real structured
-differential end to end. What's left is entirely integration work, not
-new agent logic: Phase 7 (wire the six nodes into an actual LangGraph
-`StateGraph` with conditional routing -- each agent has been built and
-tested standalone so far, not yet connected into one graph), Phase 8
-(Chainlit UI), and Phase 9 (end-to-end validation across synthetic
-cases).
+**Phases 0-7 done.** All six agents are built, tested, and now actually
+wired into one LangGraph pipeline with conditional failure-routing and
+retry/timeout around the one external API call. 91 tests passing,
+including a full end-to-end run of the real compiled graph over a
+synthetic case (`test_pipeline_runs_all_six_stages_with_audit_log_
+accumulating`) and a live call through OpenRouter's free router. What's
+left: Phase 8 (Chainlit UI) and Phase 9 (broader validation across more
+synthetic cases).
 
 ## Project structure
 
@@ -48,6 +48,7 @@ healthcare/
 │   ├── state.py               MedicalPipelineState -- the LangGraph state schema
 │   ├── audit.py                shared helper for building audit log entries
 │   ├── disclaimer.py          the intended-use disclaimer, defined once
+│   ├── pipeline.py             wires all six agents into one LangGraph StateGraph (done)
 │   └── agents/
 │       ├── data_preparation.py   unit conversion + terminology normalization (done)
 │       ├── document_parser.py    PDF (pdfplumber) + DICOM (pydicom), separate paths (done)
@@ -235,6 +236,34 @@ safe to re-run.
 - **`clinician_confirmed` always starts `False`.** This agent produces a
   report for review, not a released result -- setting it `True` is a
   UI/human action (Phase 8), never something an agent decides for itself.
+- **Conditional routing treats `needs_review` and `failed` as genuinely
+  different things.** Every stage transition checks
+  `stage_status[stage]["status"]`: `"failed"` routes straight to `END`
+  (nothing usable was produced, nothing downstream can work); `"needs_
+  review"` continues normally, since it means a stage produced real,
+  usable output that a human should look at (an implausible lab value, a
+  low-confidence differential, a close-call disagreement) -- not that the
+  stage produced nothing. Collapsing those two into one "stop the
+  pipeline" behavior would have thrown away exactly the flags the
+  clinical-safety critique wanted surfaced, not hidden.
+- **Retry/timeout lives inside the agent, not the graph.** LangGraph's
+  own per-node `retry_policy` triggers when a node raises -- but every
+  agent in this pipeline deliberately never raises (Phases 1-6 all
+  convert failures into a recorded `stage_status` entry instead, on
+  purpose). A graph-level retry would never fire. The actual retry (3
+  attempts, short backoff, transient errors only -- never auth/permission
+  errors, since this project's own Gemini attempt showed retrying one of
+  those is pointless) and the 90-second timeout (generous because the
+  free router's observed real-world latency is ~70s) live in
+  `diagnostic_prediction.py`'s `_call_openrouter`, the one call that can
+  actually be transiently wrong.
+- **The whole graph is tested end to end, offline.** `test_pipeline_runs_
+  all_six_stages_with_audit_log_accumulating` builds a real synthetic PDF,
+  runs it through the real compiled `StateGraph` (all six real agents,
+  not mocks), and checks the audit log accumulated one entry per stage in
+  order -- with a fake LLM caller and a small local ChromaDB collection
+  injected the same way Phase 4 and 5's own tests do it, so this needs no
+  API key or pre-built literature index to run.
 - **Scope: two conditions, not general medicine.** The Data Preparation
   Agent's lab-conversion table (glucose, cholesterol panel, triglycerides,
   creatinine, HbA1c) and terminology map are scoped to type 2 diabetes and

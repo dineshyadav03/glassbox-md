@@ -81,7 +81,9 @@ import os
 from pathlib import Path
 from typing import Any, Callable, TypedDict
 
+from openai import APIConnectionError, APITimeoutError, InternalServerError, OpenAI, RateLimitError
 from pydantic import BaseModel, Field
+from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 
 from ..audit import audit_entry
 from ..state import Citation, MedicalPipelineState, update_stage_status
@@ -91,6 +93,18 @@ STAGE_NAME = "diagnostic_prediction"
 MODEL_ENV_VAR = "OPENROUTER_MODEL"
 DEFAULT_MODEL_NAME = "openrouter/free"  # a router, deliberately not a specific model; see .env.example
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
+
+# Generous, not tight: the free router's observed latency in practice is
+# around 70s (queueing/routing overhead on a $0 model), so a conventional
+# 10-30s API timeout would fail this specific setup routinely, not
+# exceptionally.
+REQUEST_TIMEOUT_SECONDS = 90.0
+
+# Retries only the transient cases (connection blips, timeouts, rate
+# limits, 5xx). Deliberately NOT auth/permission errors -- this project's
+# own Gemini attempt hit API_KEY_SERVICE_BLOCKED, and retrying a
+# permission error just burns attempts on something retrying can't fix.
+_RETRYABLE_ERRORS = (APIConnectionError, APITimeoutError, RateLimitError, InternalServerError)
 
 # Below this, a returned differential is treated as "insufficient evidence"
 # rather than a usable result, per the clinical-safety critique's abstention
@@ -209,14 +223,43 @@ def _build_prompt(structured_clinical_data: dict[str, Any], rag_literature_conte
     )
 
 
+@retry(
+    retry=retry_if_exception_type(_RETRYABLE_ERRORS),
+    stop=stop_after_attempt(3),
+    # Short backoff (~0.5s, ~1s) rather than a conventional multi-second
+    # one -- this call already routinely takes ~70s on the free router,
+    # so a long inter-retry wait adds cost without adding much value, and
+    # a short one keeps the test suite (which exercises this exact retry
+    # path against a fake client) fast.
+    wait=wait_exponential(multiplier=0.5, min=0.5, max=4),
+    reraise=True,
+)
+def _call_openrouter(client: OpenAI, model_name: str, messages: list[dict[str, Any]]) -> str:
+    """The actual network call, isolated so retry only wraps the part
+    that can be transiently wrong (connection blips, timeouts, rate
+    limits, 5xx) -- not the JSON parsing/validation that follows it,
+    which retrying can't fix. `reraise=True` means the caller sees the
+    original exception type after retries are exhausted, not a wrapper.
+    """
+    completion = client.chat.completions.create(
+        model=model_name,
+        messages=messages,
+        response_format={"type": "json_object"},
+        temperature=0.2,
+        timeout=REQUEST_TIMEOUT_SECONDS,
+    )
+    raw_content = completion.choices[0].message.content
+    if not raw_content:
+        raise ValueError("model returned an empty response")
+    return raw_content
+
+
 def _default_caller(prompt: str, image_path: str | None) -> ModelDifferentialResponse:
     """The real API call, via OpenRouter (using the `openai` SDK pointed
     at OpenRouter's base URL -- OpenRouter speaks the OpenAI API format).
     Not used directly by tests -- injected as `llm_caller` so tests
     supply a fake instead."""
     import base64
-
-    from openai import OpenAI
 
     client = OpenAI(api_key=os.environ.get("OPENROUTER_API_KEY"), base_url=OPENROUTER_BASE_URL)
     model_name = os.environ.get(MODEL_ENV_VAR, DEFAULT_MODEL_NAME)
@@ -236,18 +279,11 @@ def _default_caller(prompt: str, image_path: str | None) -> ModelDifferentialRes
     # them support strict schema-constrained decoding. The exact required
     # shape is spelled out in SYSTEM_INSTRUCTION instead, and validated
     # by hand below.
-    completion = client.chat.completions.create(
-        model=model_name,
-        messages=[
-            {"role": "system", "content": SYSTEM_INSTRUCTION},
-            {"role": "user", "content": content},
-        ],
-        response_format={"type": "json_object"},
-        temperature=0.2,
-    )
-    raw_content = completion.choices[0].message.content
-    if not raw_content:
-        raise ValueError("model returned an empty response")
+    messages = [
+        {"role": "system", "content": SYSTEM_INSTRUCTION},
+        {"role": "user", "content": content},
+    ]
+    raw_content = _call_openrouter(client, model_name, messages)
     return ModelDifferentialResponse.model_validate_json(raw_content)
 
 
