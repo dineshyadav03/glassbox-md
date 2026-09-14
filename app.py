@@ -18,6 +18,19 @@ Clinician confirmation: the final report always ships with a
 "Confirm reviewed" action and nothing else. No agent sets
 `clinician_confirmed` itself (see `explainability.py`) -- only a person
 clicking this button does.
+
+UI polish pass: the differential renders as an actual Markdown table
+(condition, likelihood, evidence), read directly from
+`diagnostic_prediction_result` in state rather than re-parsed out of
+`final_explainable_report["narrative"]` -- that narrative string is a
+flattened, pre-formatted version of the same data, built for the case
+where a UI has nowhere better to put it. This UI does, so it reads the
+structured data directly and only falls back to the narrative string for
+the abstained case, where it's already just one clean sentence with
+nothing to tabulate. Confidence gets a color badge (🟢/🟡/🔴) using the
+same `CONFIDENCE_THRESHOLD` the backend abstention logic itself uses, so
+the visual cue can't drift out of sync with what "low confidence"
+actually means in this pipeline.
 """
 
 from __future__ import annotations
@@ -31,6 +44,7 @@ sys.path.insert(0, str(Path(__file__).parent / "src"))
 import chainlit as cl
 from dotenv import load_dotenv
 
+from glassbox_md.agents.diagnostic_prediction import CONFIDENCE_THRESHOLD
 from glassbox_md.disclaimer import INTENDED_USE_DISCLAIMER
 from glassbox_md.pipeline import build_pipeline_graph
 from glassbox_md.state import new_stage_status
@@ -46,6 +60,21 @@ STAGE_TITLES = {
     "explainability": "6 · Explainability",
 }
 STATUS_ICONS = {"ok": "✅", "needs_review": "⚠️", "failed": "❌"}
+
+# The upper band is a UI-only judgment call (nothing in the backend treats
+# 0.7 as meaningful) -- the lower band is not: it's the exact threshold
+# diagnostic_prediction.py uses to decide abstention, imported rather than
+# duplicated as a literal so this badge can never silently drift out of
+# sync with what "low confidence" actually triggers.
+_CONFIDENCE_HIGH_BAND = 0.7
+
+
+def _confidence_badge(confidence: float) -> str:
+    if confidence < CONFIDENCE_THRESHOLD:
+        return "🔴"
+    if confidence < _CONFIDENCE_HIGH_BAND:
+        return "🟡"
+    return "🟢"
 
 # Built once at import time -- both llm_caller and rag_collection default
 # to None, which resolves to the real OpenRouter call and the real
@@ -87,6 +116,15 @@ async def start() -> None:
     if not files:
         await cl.Message(content="No files received -- refresh the page to try again.").send()
         return
+
+    await cl.Message(
+        content=(
+            "Running the 6-agent pipeline. Steps 1-4 are usually done in a couple of "
+            "seconds; if the case reaches step 5, that's a real call to a free-tier "
+            "model and can take up to ~90 seconds -- that's expected, not a hang."
+        ),
+        author="System",
+    ).send()
 
     await run_pipeline([f.path for f in files if f.path])
 
@@ -132,7 +170,36 @@ async def _render_final_report(state: dict[str, Any]) -> None:
         ).send()
         return
 
-    lines = [report["narrative"], "", f"**Confidence:** {report['confidence']:.2f}"]
+    prediction = state.get("diagnostic_prediction_result") or {}
+    lines: list[str] = []
+
+    if prediction.get("abstained") and not prediction.get("differential"):
+        # Nothing to tabulate -- the narrative is already just one clean
+        # sentence for this case (see module docstring).
+        lines.append(report["narrative"])
+    else:
+        lines.append("### Ranked differential")
+        lines.append("")
+        lines.append("| | Condition | Likelihood | Supporting evidence |")
+        lines.append("|---|---|---|---|")
+        differential = sorted(
+            prediction.get("differential", []), key=lambda c: c["likelihood"], reverse=True
+        )
+        for condition in differential:
+            evidence = "; ".join(condition.get("supporting_evidence", [])) or "(none given)"
+            lines.append(
+                f"| {_confidence_badge(condition['likelihood'])} "
+                f"| {condition['condition']} "
+                f"| {condition['likelihood']:.2f} "
+                f"| {evidence} |"
+            )
+        reasoning_notes = prediction.get("reasoning_notes")
+        if reasoning_notes:
+            lines.append("")
+            lines.append(f"**Model's self-reported reasoning:** {reasoning_notes}")
+
+    lines.append("")
+    lines.append(f"**Overall confidence:** {_confidence_badge(report['confidence'])} {report['confidence']:.2f}")
 
     if report["citations"]:
         lines.append("")

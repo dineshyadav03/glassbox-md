@@ -480,6 +480,24 @@ shouldn't have to read thirty bullet points to find the honest gaps:
   the way `pipeline.py` or any agent gets tested. The evidence for this
   phase is the live browser run described above, the same role the live
   OpenRouter call plays for Phase 5.
+- **UI polish reads structured data directly, not the pre-formatted
+  narrative string.** `_render_final_report` builds the differential as
+  an actual Markdown table from `diagnostic_prediction_result` in state,
+  not by re-parsing `final_explainable_report["narrative"]` -- that
+  string is a flattened version of the same data, built for a UI with
+  nowhere better to put it (or none at all, if this project only had a
+  CLI). This one has somewhere better, so it uses the structured data
+  directly and only falls back to the narrative string when there's
+  nothing to tabulate (an abstained case with an empty differential).
+  The confidence badges (🟢/🟡/🔴, one per condition plus one for the
+  overall score) use the exact `CONFIDENCE_THRESHOLD` the backend
+  abstention logic itself uses, imported rather than duplicated as a
+  literal -- the visual cue can't silently drift from what "low
+  confidence" actually triggers. A heads-up message before the pipeline
+  runs sets expectations for the ~90s wait a real model call can take,
+  so that latency reads as expected behavior, not a hang. Verified live
+  in a browser with a real OpenRouter call: a genuine 3-row rendered
+  Markdown table with colored badges, not literal pipe characters.
 - **Scope: two conditions, not general medicine.** The Data Preparation
   Agent's lab-conversion table (glucose, cholesterol panel, triglycerides,
   creatinine, HbA1c) and terminology map are scoped to type 2 diabetes and
