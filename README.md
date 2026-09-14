@@ -54,10 +54,11 @@ routing" under Design decisions below.
 
 ## Status
 
-**Phases 0-9 done -- MVP complete**, plus one post-MVP bug fix found by
-live-testing the running app (see below). All six agents, wired into one
+**Phases 0-9 done -- MVP complete**, plus three post-MVP fixes found by
+live-testing the running app and by deliberately expanding validation
+past the original nine cases (see below). All six agents, wired into one
 pipeline, with a working UI, validated across a spread of synthetic
-cases. 100 automated tests passing, plus two things pytest can't check
+cases. 110 automated tests passing, plus two things pytest can't check
 by itself: a live OpenRouter call (Phase 5) and full manual runs of the
 UI in a real browser (Phase 8, revisited below) -- see both below.
 
@@ -233,11 +234,14 @@ shouldn't have to read thirty bullet points to find the honest gaps:
 - **No case-persistence layer.** Each chat session is one ephemeral run;
   "Confirm reviewed by clinician" sends a message and nothing else --
   there's no stored record for it to update yet.
-- **Only one image reaches the model, even if several are uploaded.**
-  Every uploaded DICOM gets parsed and anonymized, but Diagnostic
-  Prediction only ever attaches the first one (`imaging[0]`) to the
-  actual multimodal call -- a real scope limit, not a crash, confirmed
-  by `test_case_multiple_dicom_files_only_first_reaches_the_model`.
+- **Up to `MAX_IMAGES_PER_CALL` (4) images reach the model per case.**
+  Fixed after `test_case_multiple_dicom_files_all_reach_the_model` (Phase
+  9) found the opposite: an earlier version only ever attached the first
+  uploaded image (`imaging[0]`), silently dropping every image past it.
+  The cap itself is deliberate, not arbitrary neglect -- unbounded image
+  count risks payload-size/latency problems on an already-slow (~70s)
+  free-tier call; exceeding it is noted in the audit log, not silently
+  truncated. See Design decisions below.
 - **The LLM provider is a free-tier router** (`openrouter/free`), chosen
   after two dead ends with paid/blocked providers (see below). Expect
   ~70s latency and don't expect a fixed model identity from run to run --
@@ -522,3 +526,22 @@ shouldn't have to read thirty bullet points to find the honest gaps:
   `tests/test_validation.py` -- and verified live, not just in tests, by
   actually uploading a synthetic DICOM through the running app and
   watching a real OpenRouter call happen with the image attached.
+- **Every uploaded image now reaches the model, not just the first.**
+  `test_case_multiple_dicom_files_all_reach_the_model` (Phase 9's
+  expanded validation) uploaded two MRIs together and found only the
+  first ever got attached to the actual model call --
+  `diagnostic_prediction_agent` built `image_path` from `imaging[0]`
+  alone, and `LLMCaller`'s signature only had room for one path in the
+  first place. Fixed by changing the interface itself: `LLMCaller` now
+  takes `image_paths: list[str]`, `_default_caller` attaches every
+  image it can convert (`_load_images_for_prompt`, plural), and a short
+  text note (`"(N imaging files are attached below.)"`) is added to the
+  prompt when there's more than one, so the model doesn't treat a
+  second image as unrelated noise. Capped at `MAX_IMAGES_PER_CALL` (4)
+  to keep payload size and latency bounded on an already-slow (~70s)
+  free-tier call -- exceeding the cap is recorded in the audit log
+  (`"N additional image(s) not sent"`), not silently dropped. Regression
+  tests at both the agent level (`test_agent_sends_every_uploaded_
+  image_not_just_the_first`, `test_agent_caps_images_at_max_and_notes_
+  the_drop_in_the_audit_log` in `tests/test_diagnostic_prediction.py`)
+  and the full-pipeline level (`tests/test_validation.py`).

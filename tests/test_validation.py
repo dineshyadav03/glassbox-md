@@ -109,13 +109,13 @@ def _fake_llm(confidence=0.8, conditions=None):
 
 
 def _recording_fake_llm(confidence=0.8, conditions=None):
-    """Like _fake_llm, but remembers the (prompt, image_path) it was
+    """Like _fake_llm, but remembers the (prompt, image_paths) it was
     actually called with -- for cases that need to verify which input
     reached the model, not just that a report came back."""
     calls = []
 
-    def caller(prompt, image_path):
-        calls.append((prompt, image_path))
+    def caller(prompt, image_paths):
+        calls.append((prompt, image_paths))
         return ModelDifferentialResponse(
             differential=conditions
             or [DifferentialCondition(condition="type 2 diabetes", likelihood=confidence, supporting_evidence=["x"])],
@@ -339,14 +339,14 @@ def test_case_planted_pii_absent_from_entire_final_state(tmp_path):
 
 # --- Case 10: multiple DICOM files -- only the first reaches the model ----
 
-def test_case_multiple_dicom_files_only_first_reaches_the_model(tmp_path):
-    """Both images are parsed, anonymized, and kept in state -- but
-    diagnostic_prediction.py's `imaging[0]["source_path"]` means only the
-    first ever gets attached to the actual model call. This documents
-    that as observed, current behavior (not a crash, not silently wrong
-    -- just a real scope limit worth knowing), the same way the imaging-
-    only and malformed-response fixes started as "what actually happens
-    here" questions rather than assumptions."""
+def test_case_multiple_dicom_files_all_reach_the_model(tmp_path):
+    """Both images are parsed, anonymized, kept in state, AND both
+    actually reach the model call -- fixed after this exact case (two
+    MRIs uploaded together) was found to only ever send `imaging[0]`,
+    silently dropping every image past the first. See
+    `test_agent_sends_every_uploaded_image_not_just_the_first` in
+    `tests/test_diagnostic_prediction.py` for the agent-level version of
+    this same regression test."""
     dicom_a = _make_dicom(tmp_path, "scan_a.dcm", patient_name="A^Patient")
     dicom_b = _make_dicom(tmp_path, "scan_b.dcm", patient_name="B^Patient")
     caller = _recording_fake_llm(0.7)
@@ -360,10 +360,10 @@ def test_case_multiple_dicom_files_only_first_reaches_the_model(tmp_path):
     assert all("PatientName" not in entry["metadata"] for entry in imaging)
     assert result["final_explainable_report"] is not None
 
-    # ...but only the first was actually sent to the model.
+    # ...and both were actually sent to the model.
     assert len(caller.calls) == 1
-    _prompt, image_path_used = caller.calls[0]
-    assert image_path_used == dicom_a
+    _prompt, image_paths_used = caller.calls[0]
+    assert image_paths_used == [dicom_a, dicom_b]
 
 
 # --- Case 11: multiple PDFs -- content aggregates across all of them ------

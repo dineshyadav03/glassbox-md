@@ -28,6 +28,7 @@ from pydantic import ValidationError
 
 from glassbox_md.agents.diagnostic_prediction import (
     CONFIDENCE_THRESHOLD,
+    MAX_IMAGES_PER_CALL,
     DifferentialCondition,
     ModelDifferentialResponse,
     _build_prompt,
@@ -172,16 +173,19 @@ def _fake_response(confidence=0.8, conditions=None):
 
 
 class _CountingCaller:
-    """Tracks whether it was invoked, so tests can assert the pre-call
-    abstention path never reaches the model."""
+    """Tracks whether it was invoked (and with what image_paths), so tests
+    can assert the pre-call abstention path never reaches the model, or
+    check exactly which images a call actually received."""
 
     def __init__(self, response=None, exc=None):
         self.response = response
         self.exc = exc
         self.calls = 0
+        self.last_image_paths = None
 
-    def __call__(self, prompt, image_path):
+    def __call__(self, prompt, image_paths):
         self.calls += 1
+        self.last_image_paths = image_paths
         if self.exc:
             raise self.exc
         return self.response
@@ -207,9 +211,8 @@ def test_build_prompt_handles_empty_input():
 
 # --- _dicom_to_png_bytes ----------------------------------------------------
 
-@pytest.fixture
-def sample_dicom(tmp_path):
-    path = tmp_path / "scan.dcm"
+def _make_sample_dicom(tmp_path, filename="scan.dcm"):
+    path = tmp_path / filename
     file_meta = FileMetaDataset()
     file_meta.MediaStorageSOPClassUID = generate_uid()
     file_meta.MediaStorageSOPInstanceUID = generate_uid()
@@ -230,6 +233,11 @@ def sample_dicom(tmp_path):
     ds.PixelData = (np.arange(64, dtype=np.uint16).reshape(8, 8) * 100).tobytes()
     ds.save_as(str(path), enforce_file_format=True)
     return str(path)
+
+
+@pytest.fixture
+def sample_dicom(tmp_path):
+    return _make_sample_dicom(tmp_path)
 
 
 def test_dicom_to_png_bytes_produces_valid_png(sample_dicom):
@@ -268,6 +276,42 @@ def test_agent_calls_model_for_imaging_only_case_with_no_labs_or_history(sample_
 
     assert caller.calls == 1
     assert result["stage_status"]["diagnostic_prediction"]["status"] == "ok"
+
+
+def test_agent_sends_every_uploaded_image_not_just_the_first(tmp_path):
+    """Regression test for the multi-DICOM limitation: two images
+    uploaded together must both reach the model, not just imaging[0]."""
+    path_a = _make_sample_dicom(tmp_path, "a.dcm")
+    path_b = _make_sample_dicom(tmp_path, "b.dcm")
+    state = _base_state(
+        anonymized_patient_data={
+            "imaging": [
+                {"source_path": path_a, "metadata": {}, "pixel_summary": {}},
+                {"source_path": path_b, "metadata": {}, "pixel_summary": {}},
+            ]
+        }
+    )
+    caller = _CountingCaller(response=_fake_response())
+
+    result = diagnostic_prediction_agent(state, llm_caller=caller)
+
+    assert caller.last_image_paths == [path_a, path_b]
+    assert result["stage_status"]["diagnostic_prediction"]["status"] == "ok"
+
+
+def test_agent_caps_images_at_max_and_notes_the_drop_in_the_audit_log(tmp_path):
+    paths = [_make_sample_dicom(tmp_path, f"scan_{i}.dcm") for i in range(MAX_IMAGES_PER_CALL + 2)]
+    state = _base_state(
+        anonymized_patient_data={
+            "imaging": [{"source_path": p, "metadata": {}, "pixel_summary": {}} for p in paths]
+        }
+    )
+    caller = _CountingCaller(response=_fake_response())
+
+    result = diagnostic_prediction_agent(state, llm_caller=caller)
+
+    assert caller.last_image_paths == paths[:MAX_IMAGES_PER_CALL]
+    assert "2 additional image(s) not sent" in result["audit_log"][0]["summary"]
 
 
 def test_agent_happy_path_produces_differential():

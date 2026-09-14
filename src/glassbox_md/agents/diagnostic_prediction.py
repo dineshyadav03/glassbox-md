@@ -76,14 +76,20 @@ nothing to inspect. `reasoning_notes` and
 labeled as such. A self-report is not a faithful mechanistic explanation;
 turning it into something a clinician can actually audit is Phase 6's job.
 
-Imaging is best-effort. DICOM pixel data is converted to PNG for the
-multimodal prompt when available (`_dicom_to_png_bytes`), reading from the
-imaging entry's `source_path` -- the same path the Privacy agent already
-documented as not pixel-defaced (a stated V2 limitation, not new scope
-creep here). Conversion failures degrade to a text-only call rather than
-raising: the two conditions this MVP targets (type 2 diabetes, coronary
-artery disease) are primarily lab/history-driven, not imaging-diagnosed,
-so a missing or unreadable image is a degraded case, not a broken one.
+Imaging is best-effort and multi-file, not single-file. DICOM pixel data
+is converted to PNG for the multimodal prompt when available
+(`_dicom_to_png_bytes`), reading from each imaging entry's `source_path`
+-- the same path the Privacy agent already documented as not
+pixel-defaced (a stated V2 limitation, not new scope creep here). Every
+uploaded image is attached, up to `MAX_IMAGES_PER_CALL` -- an earlier
+version only ever attached `imaging[0]`, silently dropping every image
+past the first regardless of how many were uploaded, found by a
+validation test that asked "what happens with two MRIs?" instead of
+assuming one was representative. A conversion failure on one image is
+dropped from the prompt rather than failing the whole call: the two
+conditions this MVP targets (type 2 diabetes, coronary artery disease)
+are primarily lab/history-driven, not imaging-diagnosed, so a missing or
+unreadable image degrades that one image, not the whole case.
 """
 
 from __future__ import annotations
@@ -192,7 +198,13 @@ class DiagnosticPredictionResult(TypedDict):
     model_name: str
 
 
-LLMCaller = Callable[[str, str | None], ModelDifferentialResponse]
+# Every uploaded image is attached, up to this many -- unbounded growth
+# would risk payload-size/latency problems on an already-slow (~70s)
+# free-tier call. Conservative, not tuned against a real provider limit;
+# raise it if a real case with more legitimately-relevant images shows up.
+MAX_IMAGES_PER_CALL = 4
+
+LLMCaller = Callable[[str, list[str]], ModelDifferentialResponse]
 
 
 def _dicom_to_png_bytes(source_path: str) -> bytes | None:
@@ -233,6 +245,18 @@ def _load_image_for_prompt(source_path: str) -> tuple[bytes, str] | None:
         mime = "image/png" if extension == ".png" else "image/jpeg"
         return data, mime
     return None
+
+
+def _load_images_for_prompt(image_paths: list[str]) -> list[tuple[bytes, str]]:
+    """Load every path into (bytes, mime_type) pairs, skipping any that
+    can't be converted (see `_load_image_for_prompt`) rather than
+    dropping the whole call over one bad image among several."""
+    loaded: list[tuple[bytes, str]] = []
+    for path in image_paths:
+        result = _load_image_for_prompt(path)
+        if result:
+            loaded.append(result)
+    return loaded
 
 
 def _build_prompt(structured_clinical_data: dict[str, Any], rag_literature_context: list[Citation]) -> str:
@@ -287,7 +311,7 @@ def _call_openrouter(
     return ModelDifferentialResponse.model_validate_json(raw_content)
 
 
-def _default_caller(prompt: str, image_path: str | None) -> ModelDifferentialResponse:
+def _default_caller(prompt: str, image_paths: list[str]) -> ModelDifferentialResponse:
     """The real API call, via OpenRouter (using the `openai` SDK pointed
     at OpenRouter's base URL -- OpenRouter speaks the OpenAI API format).
     Not used directly by tests -- injected as `llm_caller` so tests
@@ -298,14 +322,15 @@ def _default_caller(prompt: str, image_path: str | None) -> ModelDifferentialRes
     model_name = os.environ.get(MODEL_ENV_VAR, DEFAULT_MODEL_NAME)
 
     content: list[dict[str, Any]] = [{"type": "text", "text": prompt}]
-    if image_path:
-        loaded = _load_image_for_prompt(image_path)
-        if loaded:
-            data, mime_type = loaded
-            encoded = base64.b64encode(data).decode("ascii")
-            content.append(
-                {"type": "image_url", "image_url": {"url": f"data:{mime_type};base64,{encoded}"}}
-            )
+    images = _load_images_for_prompt(image_paths)
+    if len(images) > 1:
+        # A short heads-up so the model doesn't assume the second image
+        # is unrelated noise -- multiple attached images are normal here
+        # (e.g. more than one imaging study), not an error.
+        content.append({"type": "text", "text": f"({len(images)} imaging files are attached below.)"})
+    for data, mime_type in images:
+        encoded = base64.b64encode(data).decode("ascii")
+        content.append({"type": "image_url", "image_url": {"url": f"data:{mime_type};base64,{encoded}"}})
 
     # Plain JSON mode, not the SDK's stricter .parse()/response_schema --
     # the free router can land on any underlying model, and not all of
@@ -359,11 +384,13 @@ def diagnostic_prediction_agent(
         }
 
     prompt = _build_prompt(structured, citations)
-    image_path = imaging[0]["source_path"] if imaging else None
+    all_image_paths = [entry["source_path"] for entry in imaging]
+    image_paths = all_image_paths[:MAX_IMAGES_PER_CALL]
+    dropped_image_count = len(all_image_paths) - len(image_paths)
     caller = llm_caller or _default_caller
 
     try:
-        model_response = caller(prompt, image_path)
+        model_response = caller(prompt, image_paths)
     except Exception as exc:  # the external API call -- network/auth/parsing failures, not a code bug
         return {
             "stage_status": update_stage_status(
@@ -389,7 +416,12 @@ def diagnostic_prediction_agent(
     summary = (
         f"{'abstained (low confidence)' if abstained else 'produced'} differential with "
         f"{len(result['differential'])} condition(s), confidence {result['overall_confidence']:.2f}"
+        f"; {len(image_paths)} image(s) sent"
     )
+    # No silent truncation: if the imaging count exceeded the cap, say so
+    # in the audit trail rather than quietly dropping the extras.
+    if dropped_image_count > 0:
+        summary += f" ({dropped_image_count} additional image(s) not sent -- exceeds MAX_IMAGES_PER_CALL)"
 
     return {
         "diagnostic_prediction_result": result,
