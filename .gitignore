@@ -26,6 +26,15 @@ data/synthetic_patients/*
 *.sqlite3
 chroma/
 
+# Chainlit runtime -- .files/ is where uploaded documents actually land on
+# disk while the app runs. This must never be committed: it's the exact
+# kind of real-or-synthetic patient document data/README.md already says
+# doesn't belong in version control, just written by Chainlit instead of
+# by hand. translations/ is auto-regenerated framework boilerplate
+# (~400KB of locale JSON), not project content.
+.files/
+.chainlit/translations/
+
 # Editors / OS
 .vscode/
 .idea/

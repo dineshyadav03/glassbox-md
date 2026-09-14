@@ -1,0 +1,33 @@
+/* Persistent disclaimer banner, visible on every screen -- not a
+ * one-time chat message that scrolls out of view. Pure CSS (a
+ * `content` string on a pseudo-element), since Chainlit's custom_css
+ * hook can style the page but doesn't give us a template hook to
+ * inject real markup.
+ *
+ * Keep this text in sync with INTENDED_USE_BANNER in
+ * src/glassbox_md/disclaimer.py -- there is no build step that shares
+ * the string between the Python backend and this static CSS file.
+ */
+
+body::before {
+  content: "Demo only \2014 not a medical device, not clinically validated, not medical advice. Requires clinician review before any action.";
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 9999;
+  display: block;
+  padding: 6px 16px;
+  background: #7f1d1d;
+  color: #fef2f2;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 12.5px;
+  font-weight: 500;
+  text-align: center;
+  letter-spacing: 0.01em;
+}
+
+/* Push the app's own content down so the banner never overlaps it. */
+#root {
+  margin-top: 30px;
+}
