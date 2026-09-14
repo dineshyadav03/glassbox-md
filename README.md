@@ -54,11 +54,11 @@ routing" under Design decisions below.
 
 ## Status
 
-**Phases 0-9 done -- MVP complete**, plus three post-MVP fixes found by
+**Phases 0-9 done -- MVP complete**, plus four post-MVP fixes found by
 live-testing the running app and by deliberately expanding validation
 past the original nine cases (see below). All six agents, wired into one
 pipeline, with a working UI, validated across a spread of synthetic
-cases. 110 automated tests passing, plus two things pytest can't check
+cases. 111 automated tests passing, plus two things pytest can't check
 by itself: a live OpenRouter call (Phase 5) and full manual runs of the
 UI in a real browser (Phase 8, revisited below) -- see both below.
 
@@ -78,6 +78,19 @@ and a live upload of a synthetic DICOM through the running app that
 reached a real OpenRouter call with the image attached (a random-noise
 test image, honestly -- it correctly returned zero confidence, which is
 the right answer for meaningless pixel data, not a broken fix).
+
+**Found after that: a real MRI photo could make the UI lie about
+whether the backend was still working.** Uploading a stock MRI photo
+(wrapped as DICOM to pass the file-type gate) showed "Could not reach
+the server" mid-run, while the server's own logs showed the real
+OpenRouter call had actually returned `HTTP 200 OK`. Root cause:
+`app.py` drove the graph with LangGraph's *sync* `.stream()` inside an
+`async def` handler, so Diagnostic Prediction's blocking `OpenAI`
+client call (60-180s for a real image) froze Chainlit's asyncio event
+loop and starved its own Socket.IO keepalive. Fixed by switching to
+`.astream()`, which runs each node's sync function on a thread-pool
+executor instead of the calling loop. See Design decisions below for
+the full story and both ways it was verified.
 
 **Phase 9 validation** (`tests/test_validation.py`) runs 14 diverse
 synthetic cases through the real compiled pipeline -- not just the one
@@ -443,10 +456,38 @@ shouldn't have to read thirty bullet points to find the honest gaps:
   injected the same way Phase 4 and 5's own tests do it, so this needs no
   API key or pre-built literature index to run.
 - **The pipeline streams, it doesn't just invoke.** `app.py` calls
-  `_pipeline.stream(state)`, not `.invoke(state)` -- streaming yields
+  `_pipeline.astream(state)`, not `.invoke(state)` -- streaming yields
   after each node finishes, which is what lets each of the six agents
   render as its own step live as the graph runs. `.invoke()` would only
   return the final state, with nothing to show until everything finished.
+- **`astream()`, not `stream()` -- a real bug found by live-testing a
+  real MRI photo, not a synthetic image.** `app.py` originally drove the
+  graph with `for chunk in _pipeline.stream(state)`, LangGraph's *sync*
+  iterator, inside an `async def` handler. Diagnostic Prediction's real
+  call (`_default_caller` in `diagnostic_prediction.py`) uses a blocking
+  `OpenAI` client and can run 60-180s for a real image; iterated via
+  `.stream()`, that blocking call froze the whole async handler -- and
+  with it Chainlit's asyncio event loop -- for the entire wait, starving
+  the Socket.IO keepalive ping until the browser decided the server was
+  unreachable. Caught live, not hypothesized: uploading a stock MRI photo
+  (wrapped as DICOM to pass the file-type gate) showed "Could not reach
+  the server" in the UI, while the server's own logs showed the
+  OpenRouter call return `HTTP 200 OK` a few seconds later -- the backend
+  had actually succeeded, but nothing was left to render the result.
+  Fixed by switching to `_pipeline.astream(state)`: per LangGraph's own
+  Runnable execution model, a plain synchronous node function invoked
+  through the async API runs on a thread-pool executor instead of inline
+  on the calling event loop, so a slow node no longer blocks it. Verified
+  two ways: `test_astream_keeps_the_event_loop_responsive_during_a_slow_
+  llm_call` in `tests/test_pipeline.py` proves it at the level `app.py`
+  actually depends on (a concurrent asyncio task keeps ticking while a
+  deliberately slow fake LLM call is "in flight" inside `graph.astream`,
+  rather than the loop freezing solid) -- and a real headless run of the
+  actual pipeline against that same stock-photo-wrapped-DICOM file
+  produced a real, sensible result (a low-confidence "unremarkable brain
+  MRI" differential, correctly abstained) once the websocket wasn't in
+  the way, confirming the backend's answer was right all along and only
+  the UI's connection was the problem.
 - **Disclaimer shown two ways, not one.** A `cl.Message` at chat start
   (so it's the very first thing a user sees) AND a persistent CSS banner
   (`public/banner.css`, using a `body::before` pseudo-element for the

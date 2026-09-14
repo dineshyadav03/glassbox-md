@@ -133,7 +133,22 @@ async def run_pipeline(paths: list[str]) -> None:
     state = _new_state(paths)
 
     try:
-        for chunk in _pipeline.stream(state):
+        # astream(), not stream() -- stream() is LangGraph's SYNC API, and
+        # Diagnostic Prediction's real OpenRouter call
+        # (_default_caller in diagnostic_prediction.py) is a blocking
+        # `OpenAI` client call that can run 60-180s. Iterating stream()
+        # here froze this whole async handler -- and with it Chainlit's
+        # asyncio event loop -- for the entire call, starving the
+        # Socket.IO keepalive ping until the browser decided the server
+        # was unreachable, even though the backend call was still working
+        # and eventually succeeded. astream() runs each node's plain sync
+        # function through a thread-pool executor instead of inline on
+        # this loop, so a slow node no longer blocks it. Found live: a
+        # real upload's UI showed "Could not reach the server" while the
+        # server logs showed the OpenRouter call return HTTP 200 a few
+        # seconds later. See test_astream_keeps_the_event_loop_responsive_
+        # during_a_slow_llm_call in tests/test_pipeline.py.
+        async for chunk in _pipeline.astream(state):
             for stage_name, update in chunk.items():
                 state = {**state, **update}
                 await _render_stage_step(stage_name, update)
