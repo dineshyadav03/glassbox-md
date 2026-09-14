@@ -27,16 +27,54 @@ roadmap this scaffold is built from -- lives in the published project
 artifact (link in your conversation history). This README covers the code,
 not the reasoning behind it.
 
+## Architecture
+
+```mermaid
+flowchart TD
+    IN["PDF / DICOM upload"] --> P1
+    P1["1 · Document Parser<br/>pdfplumber + pydicom"] -->|failed| END1(("halt"))
+    P1 --> P2["2 · Privacy Protection<br/>Presidio + spaCy NER"]
+    P2 -->|failed| END2(("halt"))
+    P2 --> P3["3 · Data Preparation<br/>unit + terminology normalization"]
+    P3 -->|failed| END3(("halt"))
+    P3 --> P4["4 · Medical Knowledge RAG<br/>ChromaDB + PubMed"]
+    P4 -->|failed| END4(("halt"))
+    P4 --> P5["5 · Diagnostic Prediction<br/>OpenRouter (openrouter/free)"]
+    P5 -->|failed| END5(("halt"))
+    P5 --> P6["6 · Explainability<br/>citations + real SHAP demo"]
+    P6 --> OUT["Final report + Confirm action (Chainlit)"]
+```
+
+`needs_review` (an implausible lab value, a low-confidence differential, a
+close-call disagreement) is not shown above as its own branch because it
+doesn't change the routing -- it continues to the next stage like `ok`
+does, carrying the flag forward into the final report. Only `failed`
+(nothing usable was produced) halts the pipeline early. See "Conditional
+routing" under Design decisions below.
+
 ## Status
 
-**Phases 0-8 done.** The full pipeline has a working UI. 91 automated
-tests passing, plus a full manual verification of the live app in a
-browser (see below) -- Chainlit's UI layer isn't unit-testable the way
-the agents are, so that verification is the evidence for this phase, the
-same role the live OpenRouter test plays for Phase 5. Only Phase 9
-(broader validation across more synthetic cases) remains.
+**Phases 0-9 done -- MVP complete.** All six agents, wired into one
+pipeline, with a working UI, validated across a spread of synthetic
+cases. 98 automated tests passing, plus two things pytest can't check by
+itself: a live OpenRouter call (Phase 5) and a full manual run of the UI
+in a real browser (Phase 8) -- see both below.
 
 Run it: `chainlit run app.py -w`, then open the local URL it prints.
+
+**Phase 9 validation** (`tests/test_validation.py`) ran 8 diverse
+synthetic cases through the real compiled pipeline -- not just the one
+happy path Phase 7's own capstone test covers: a clean diabetes case, a
+clean coronary-artery-disease case, an implausible lab value (flagged,
+not blocked), an unrecognized lab test (halts cleanly, no crash), a
+genuinely empty document (halts cleanly at the RAG stage, no crash), a
+DICOM image alongside lab data (PHI-bearing tags confirmed stripped), a
+close-call differential (correctly flagged for review), and a case with
+five different planted PHI-shaped identifiers (name, DOB, SSN, MRN,
+DICOM patient name) swept against the *entire* downstream state as one
+serialized blob -- not just checked in one field the way Phase 3's own
+test did -- confirming none of them survive anywhere past the Privacy
+Protection Agent.
 
 **What the live verification actually confirmed** (a real synthetic PDF,
 uploaded through the running app, no mocks): all six agents rendered as
@@ -81,7 +119,9 @@ healthcare/
 │   ├── literature/             PubMed abstract cache for the RAG agent
 │   └── synthetic_patients/     self-generated fake documents, for testing redaction
 ├── tests/
-│   └── test_state.py          tests for the privacy-boundary runtime guard
+│   ├── test_state.py           tests for the privacy-boundary runtime guard
+│   ├── test_pipeline.py        conditional routing + full end-to-end graph test
+│   └── test_validation.py      Phase 9: 8 diverse synthetic cases, full-state PII sweep
 ├── requirements.txt           dependencies, grouped by the phase that introduces them
 ├── pyproject.toml             project metadata + pytest config
 └── .env.example                copy to .env and fill in API keys (never commit .env)
@@ -125,6 +165,43 @@ chainlit run app.py -w
 `-w` enables auto-reload on file changes. Opens at `http://localhost:8000`.
 Upload a lab-report/history PDF and/or a DICOM file to run it through
 the pipeline; each agent renders as its own step as it completes.
+
+## Known limitations
+
+Scoped deliberately, not accidentally -- each of these is discussed in
+more depth under Design decisions below, but a portfolio reviewer
+shouldn't have to read thirty bullet points to find the honest gaps:
+
+- **Two conditions only** (type 2 diabetes, coronary artery disease), not
+  general medicine -- an unrecognized lab test or condition is rejected,
+  not silently guessed at.
+- **RAG is flat vector search**, not the 3-tier graph (patient →
+  literature → controlled vocabulary) the project's own architecture
+  critique recommended for real citation traceability. A V2 item.
+- **The SHAP demo never explains the current patient.** It runs on a
+  public dataset, by design, and says so in the report -- see why under
+  Design decisions. Explaining an actual case is the citation-grounded
+  narrative's job, not SHAP's, in this design.
+- **PII redaction covers 8 of the 18 HIPAA Safe Harbor identifier
+  categories** (names, dates, phone/fax, email, geographic subdivisions,
+  SSNs, URLs, IPs, plus a custom medical-record-number pattern) via
+  Presidio + spaCy. Biometric identifiers, full-face photographs
+  (pixel-level DICOM defacing), and vehicle identifiers are not
+  addressed -- listed explicitly in `privacy_protection.py`, not implied
+  away.
+- **No case-persistence layer.** Each chat session is one ephemeral run;
+  "Confirm reviewed by clinician" sends a message and nothing else --
+  there's no stored record for it to update yet.
+- **The LLM provider is a free-tier router** (`openrouter/free`), chosen
+  after two dead ends with paid/blocked providers (see below). Expect
+  ~70s latency and don't expect a fixed model identity from run to run --
+  not a production-grade reliability story.
+- **No formal clinical validation** -- no accuracy, sensitivity, or
+  specificity metrics against a labeled dataset, and none are claimed.
+  This is a portfolio demonstration of an architecture, not a validated
+  diagnostic tool; see the disclaimer at the top of this file.
+- **English-only.** `en_core_web_sm`'s NER recall on non-English or
+  unusual names is not something this project has tested or tuned for.
 
 ## Design decisions worth knowing
 
@@ -337,3 +414,21 @@ the pipeline; each agent renders as its own step as it completes.
   test raises `UnknownLabTestError` rather than silently passing the value
   through unconverted -- expanding scope later means adding entries to
   `LAB_CONVERSIONS`, not relaxing that check.
+- **The privacy sweep checks the whole state, not one field.**
+  `test_case_planted_pii_absent_from_entire_final_state` (Phase 9)
+  serializes the *entire* downstream state to JSON and searches for each
+  planted identifier, rather than checking `history_text` specifically
+  the way Phase 3's own test does. That's deliberately the stronger check
+  for a final validation pass: it would also catch a leak into
+  `structured_clinical_data`, `rag_literature_context`, or
+  `final_explainable_report` that a narrower, field-specific test could
+  miss simply because nobody thought to check that particular field.
+- **The empty-document case halts at RAG, not at Diagnostic Prediction.**
+  Worth knowing if you're tracing pipeline behavior for a blank input:
+  Parser, Privacy, and Data Preparation all legitimately succeed with
+  empty-but-valid output (empty text is not a parse error), so the first
+  stage that actually has nothing to work with is the RAG agent's query
+  builder, which fails before Diagnostic Prediction's own pre-call
+  abstention path (tested in isolation in Phase 5) ever gets reached in
+  a real end-to-end run. Both checks are real; they just fire at
+  different stages depending on how the input is empty.
