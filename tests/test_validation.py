@@ -4,7 +4,7 @@ only the RAG collection and LLM caller are injected fakes, matching
 every other phase's own test pattern -- fast, free, deterministic,
 without weakening what it actually proves about the real agent code).
 
-Two things this file exists to confirm, per the roadmap's Phase 9 task
+Three things this file exists to confirm, per the roadmap's Phase 9 task
 list:
   1. The pipeline behaves sensibly across realistic and edge-case
      inputs, not just the one happy-path case Phase 7's capstone test
@@ -16,6 +16,13 @@ list:
      checked as a blanket structural sweep (serialize the whole
      downstream state, search for each raw planted value), not just the
      one history_text field Phase 3's own test already checked.
+  3. Imaging-only input (an MRI or X-ray with no lab report or history
+     text) reaches a full report instead of dying partway through --
+     added after a live manual test of the running app surfaced a real
+     bug: the RAG and Diagnostic Prediction agents both only looked at
+     labs/history text, so an imaging-only case hard-failed before the
+     model ever got a chance to reason over the image. See the module
+     docstrings in medical_knowledge_rag.py and diagnostic_prediction.py.
 """
 
 import json
@@ -182,20 +189,29 @@ def test_case_unknown_lab_test_halts_cleanly(tmp_path):
 
 # --- Case 5: a genuinely empty document halts cleanly at RAG --------------
 
-def test_case_empty_document_halts_cleanly(tmp_path):
+def test_case_empty_document_still_produces_an_explained_report(tmp_path):
+    """No text, no table, no imaging at all -- every stage should still
+    run and produce a real "insufficient evidence" report, not silently
+    die partway through. (An earlier version hard-failed at RAG and
+    stopped there with no report at all; that's the bug the imaging-only
+    fix in this same session corrected -- this case exercises the same
+    fix from the "nothing whatsoever" end of the spectrum.)"""
     pdf = _make_pdf(tmp_path, "c5.pdf", [])  # no text, no table at all
     graph = build_pipeline_graph(llm_caller=_fake_llm(0.8), rag_collection=_rag_collection(tmp_path))
 
     result = graph.invoke(_initial_state([pdf]))
 
-    # Parser/Privacy/Prep all succeed on legitimately empty-but-valid
-    # output; RAG is the stage with nothing to query with.
     assert result["stage_status"]["document_parser"]["status"] == "ok"
     assert result["stage_status"]["privacy_protection"]["status"] == "ok"
     assert result["stage_status"]["data_preparation"]["status"] == "ok"
-    assert result["stage_status"]["medical_knowledge_rag"]["status"] == "failed"
-    assert result["stage_status"]["diagnostic_prediction"]["status"] == "pending"
-    assert result["final_explainable_report"] is None
+    assert result["stage_status"]["medical_knowledge_rag"]["status"] == "needs_review"
+    assert result["stage_status"]["diagnostic_prediction"]["status"] == "needs_review"
+    assert result["diagnostic_prediction_result"]["abstained"] is True
+
+    report = result["final_explainable_report"]
+    assert report is not None
+    assert "insufficient evidence" in report["narrative"].lower()
+    assert report["disagreement_flagged"] is True
 
 
 # --- Case 6: DICOM imaging alongside a lab PDF ----------------------------
@@ -212,6 +228,25 @@ def test_case_dicom_imaging_alongside_labs(tmp_path):
     imaging = result["anonymized_patient_data"]["imaging"]
     assert len(imaging) == 1
     assert "PatientName" not in imaging[0]["metadata"]
+
+
+# --- Case 9: imaging ONLY -- an MRI/X-ray with no lab report or history --
+
+def test_case_imaging_only_reaches_a_full_report(tmp_path):
+    """Regression test for a real bug this exact question surfaced: an
+    MRI or X-ray with nothing else attached used to hard-fail at the RAG
+    stage (no text to build a literature query with) and never reach
+    Diagnostic Prediction at all -- silently defeating the multimodal
+    design for the one case it exists to handle. Both fixes are
+    exercised together here, end to end, not just in isolation."""
+    dicom = _make_dicom(tmp_path, "c9.dcm")
+    graph = build_pipeline_graph(llm_caller=_fake_llm(0.7), rag_collection=_rag_collection(tmp_path))
+
+    result = graph.invoke(_initial_state([dicom]))
+
+    assert result["stage_status"]["medical_knowledge_rag"]["status"] == "needs_review"
+    assert result["stage_status"]["diagnostic_prediction"]["status"] == "ok"
+    assert result["final_explainable_report"] is not None
 
 
 # --- Case 7: a close-call differential is flagged for review --------------

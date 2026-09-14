@@ -35,6 +35,16 @@ reason as earlier phases -- real functionality, smaller footprint:
 Abstracts are short enough (typically a few hundred words) to embed as
 one chunk each for this MVP -- no sliding-window chunking. A V2 indexing
 full-text articles instead of abstracts would need real chunking.
+
+A case with no lab values or history text (imaging alone -- an MRI or
+X-ray with nothing else attached) never hard-fails here. An earlier
+version of this agent returned `failed` when it had no text to build a
+literature query from, which -- per the pipeline's conditional routing --
+halted the entire graph before the Diagnostic Prediction agent ever got
+a chance to reason over the image itself, silently defeating the whole
+multimodal design for imaging-only cases. "Nothing to retrieve" is now
+treated the same as "retrieved and found nothing": `needs_review` with
+an empty citation list, which lets the pipeline continue.
 """
 
 from __future__ import annotations
@@ -205,22 +215,24 @@ def medical_knowledge_rag_agent(
     structured = state.get("structured_clinical_data") or {}
     query_text = _build_query_text(structured)
 
-    if not query_text.strip():
-        return {
-            "stage_status": update_stage_status(
-                state, STAGE_NAME, {"status": "failed", "message": "no clinical data to query literature with"}
-            ),
-            "audit_log": [audit_entry(STAGE_NAME, "failed: no clinical data to query literature with")],
-        }
-
+    # No text to search literature with is a degraded result, not a fatal
+    # one -- a case with imaging but no labs/history (an MRI or X-ray
+    # alone) has nothing for THIS agent to retrieve, but that must not
+    # block the Diagnostic Prediction agent from reasoning over the image
+    # itself. Skip the query and fall through to the same "no citations
+    # found" needs_review path used when a real search comes back empty,
+    # rather than hard-failing and halting the whole pipeline here.
     if collection is None:
         collection = _default_collection()
 
-    citations = query_literature(collection, query_text, n_results=5)
+    citations = query_literature(collection, query_text, n_results=5) if query_text.strip() else []
 
     if not citations:
-        status = {"status": "needs_review", "message": "no matching literature found for this case"}
-        summary = "no matching literature found"
+        message = (
+            "no clinical text to query literature with" if not query_text.strip() else "no matching literature found for this case"
+        )
+        status = {"status": "needs_review", "message": message}
+        summary = message
     else:
         status = {"status": "ok", "message": None}
         summary = f"retrieved {len(citations)} literature citation(s)"

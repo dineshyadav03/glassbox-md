@@ -133,9 +133,14 @@ def test_build_literature_collection_upsert_is_idempotent(tmp_path):
 
 # --- medical_knowledge_rag_agent (the LangGraph node) -----------------------
 
-def test_agent_fails_with_no_structured_clinical_data():
+def test_agent_needs_review_with_no_structured_clinical_data():
+    """No text to build a literature query with (e.g. an imaging-only
+    case, no labs/history) is a degraded result, not a fatal one -- it
+    must not halt the pipeline before Diagnostic Prediction gets a
+    chance to reason over the image itself. See the module docstring."""
     result = medical_knowledge_rag_agent(_base_state())
-    assert result["stage_status"]["medical_knowledge_rag"]["status"] == "failed"
+    assert result["stage_status"]["medical_knowledge_rag"]["status"] == "needs_review"
+    assert result["rag_literature_context"] == []
 
 
 def test_agent_retrieves_citations_for_a_case(tmp_path):

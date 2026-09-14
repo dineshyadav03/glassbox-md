@@ -48,9 +48,16 @@ status via the same try/except already around the caller -- not a
 special case.
 
 Two-stage abstention, not one:
-  1. Pre-call: no clinical data AND no retrieved literature at all means
-     abstaining without spending an API call -- there's nothing for the
-     model to reason over.
+  1. Pre-call: no labs, no history text, no imaging, AND no retrieved
+     literature at all means abstaining without spending an API call --
+     there's nothing for the model to reason over. Imaging counts as
+     clinical data on its own here: an MRI or X-ray with no accompanying
+     lab report or history is a real, legitimate case (this agent's
+     multimodal call was built to handle exactly this), not an empty one.
+     An earlier version of this check only looked at labs/history/
+     citations, which meant an imaging-only case abstained before ever
+     reaching the API -- silently dropping the image this agent's own
+     `_load_image_for_prompt` was already built to send.
   2. Post-call: if the model's own `overall_confidence` is below
      `CONFIDENCE_THRESHOLD`, the result is marked abstained even though a
      response came back. A low-confidence differential is exactly the
@@ -298,9 +305,26 @@ def diagnostic_prediction_agent(
     citations = state.get("rag_literature_context") or []
     imaging = (state.get("anonymized_patient_data") or {}).get("imaging") or []
 
-    has_clinical_data = bool(structured.get("labs")) or bool(structured.get("history_text"))
+    has_clinical_data = bool(structured.get("labs")) or bool(structured.get("history_text")) or bool(imaging)
     if not has_clinical_data and not citations:
+        # Still populate diagnostic_prediction_result, not just the
+        # stage_status -- the Explainability agent checks for this key's
+        # presence to decide whether it has anything to explain. Leaving
+        # it unset here (as an earlier version did) meant a genuinely
+        # empty case still ended with no report at all, just one stage
+        # later (Explainability failing instead of this one abstaining) --
+        # same silent-dead-end problem the imaging-only fix above solves,
+        # for the one input that's abstained from the very start.
+        empty_result: DiagnosticPredictionResult = {
+            "differential": [],
+            "overall_confidence": 0.0,
+            "reasoning_notes": "",
+            "abstained": True,
+            "abstention_reason": "no clinical data or literature to reason over",
+            "model_name": os.environ.get(MODEL_ENV_VAR, DEFAULT_MODEL_NAME),
+        }
         return {
+            "diagnostic_prediction_result": empty_result,
             "stage_status": update_stage_status(
                 state,
                 STAGE_NAME,

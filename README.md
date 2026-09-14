@@ -54,21 +54,39 @@ routing" under Design decisions below.
 
 ## Status
 
-**Phases 0-9 done -- MVP complete.** All six agents, wired into one
+**Phases 0-9 done -- MVP complete**, plus one post-MVP bug fix found by
+live-testing the running app (see below). All six agents, wired into one
 pipeline, with a working UI, validated across a spread of synthetic
-cases. 98 automated tests passing, plus two things pytest can't check by
-itself: a live OpenRouter call (Phase 5) and a full manual run of the UI
-in a real browser (Phase 8) -- see both below.
+cases. 100 automated tests passing, plus two things pytest can't check
+by itself: a live OpenRouter call (Phase 5) and full manual runs of the
+UI in a real browser (Phase 8, revisited below) -- see both below.
 
 Run it: `chainlit run app.py -w`, then open the local URL it prints.
 
-**Phase 9 validation** (`tests/test_validation.py`) ran 8 diverse
+**Found after "MVP complete": an imaging-only input used to kill the
+whole pipeline.** Uploading only an MRI or X-ray, with no lab report or
+history text, made the Medical Knowledge RAG agent hard-fail (nothing to
+build a literature query from) and halt the graph before the Diagnostic
+Prediction agent -- the one agent that actually looks at the image --
+ever ran. Fixed in both agents: RAG now treats "nothing to search with"
+as a degraded `needs_review` result instead of a fatal one, and
+Diagnostic Prediction's pre-call check now counts imaging as valid
+clinical input on its own, not just labs/history text. Verified twice:
+`tests/test_validation.py::test_case_imaging_only_reaches_a_full_report`,
+and a live upload of a synthetic DICOM through the running app that
+reached a real OpenRouter call with the image attached (a random-noise
+test image, honestly -- it correctly returned zero confidence, which is
+the right answer for meaningless pixel data, not a broken fix).
+
+**Phase 9 validation** (`tests/test_validation.py`) ran 9 diverse
 synthetic cases through the real compiled pipeline -- not just the one
 happy path Phase 7's own capstone test covers: a clean diabetes case, a
 clean coronary-artery-disease case, an implausible lab value (flagged,
 not blocked), an unrecognized lab test (halts cleanly, no crash), a
-genuinely empty document (halts cleanly at the RAG stage, no crash), a
-DICOM image alongside lab data (PHI-bearing tags confirmed stripped), a
+genuinely empty document (produces a real "insufficient evidence" report
+instead of dying partway through -- see the imaging-only fix above), a
+DICOM image alongside lab data (PHI-bearing tags confirmed stripped), an
+imaging-only case (reaches a full report instead of halting), a
 close-call differential (correctly flagged for review), and a case with
 five different planted PHI-shaped identifiers (name, DOB, SSN, MRN,
 DICOM patient name) swept against the *entire* downstream state as one
@@ -121,7 +139,7 @@ healthcare/
 ├── tests/
 │   ├── test_state.py           tests for the privacy-boundary runtime guard
 │   ├── test_pipeline.py        conditional routing + full end-to-end graph test
-│   └── test_validation.py      Phase 9: 8 diverse synthetic cases, full-state PII sweep
+│   └── test_validation.py      Phase 9: 9 diverse synthetic cases, full-state PII sweep
 ├── requirements.txt           dependencies, grouped by the phase that introduces them
 ├── pyproject.toml             project metadata + pytest config
 └── .env.example                copy to .env and fill in API keys (never commit .env)
@@ -423,12 +441,32 @@ shouldn't have to read thirty bullet points to find the honest gaps:
   `structured_clinical_data`, `rag_literature_context`, or
   `final_explainable_report` that a narrower, field-specific test could
   miss simply because nobody thought to check that particular field.
-- **The empty-document case halts at RAG, not at Diagnostic Prediction.**
-  Worth knowing if you're tracing pipeline behavior for a blank input:
-  Parser, Privacy, and Data Preparation all legitimately succeed with
-  empty-but-valid output (empty text is not a parse error), so the first
-  stage that actually has nothing to work with is the RAG agent's query
-  builder, which fails before Diagnostic Prediction's own pre-call
-  abstention path (tested in isolation in Phase 5) ever gets reached in
-  a real end-to-end run. Both checks are real; they just fire at
-  different stages depending on how the input is empty.
+- **Found by a user's question, not by inspection: imaging-only input used
+  to kill the whole pipeline.** "What if all we have is an MRI or X-ray?"
+  turned out to expose a real bug spanning two agents, both of which only
+  ever checked labs/history text and never imaging:
+    - The RAG agent built its literature-search query from labs/history
+      text alone; with neither present, it returned `failed`, and per the
+      routing rule, `failed` halts the graph immediately -- before
+      Diagnostic Prediction, the one agent that actually looks at the
+      image, ever ran.
+    - Diagnostic Prediction's own pre-call abstention check had the same
+      blind spot (`has_clinical_data = bool(labs) or bool(history_text)`)
+      -- even if RAG hadn't halted things first, this check would have
+      abstained too, never sending the image its own
+      `_load_image_for_prompt` was already built to attach.
+  Fixed both: RAG now treats "nothing to search with" as a degraded
+  `needs_review` result (empty citations), the same as "searched and
+  found nothing," instead of a fatal one; Diagnostic Prediction's check
+  now includes `bool(imaging)`. A side effect worth knowing: a *fully*
+  empty document (no text AND no imaging) now reaches a complete
+  "insufficient evidence" report instead of dying partway through too --
+  the pre-call abstention path didn't used to set
+  `diagnostic_prediction_result` at all, so Explainability treated it as
+  nothing to explain and failed one stage later. Both fixes are exercised
+  together, end to end, in
+  `test_case_imaging_only_reaches_a_full_report` and
+  `test_case_empty_document_still_produces_an_explained_report` in
+  `tests/test_validation.py` -- and verified live, not just in tests, by
+  actually uploading a synthetic DICOM through the running app and
+  watching a real OpenRouter call happen with the image attached.

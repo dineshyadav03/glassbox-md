@@ -215,6 +215,22 @@ def test_agent_abstains_before_calling_model_when_no_input():
     assert result["stage_status"]["diagnostic_prediction"]["status"] == "needs_review"
 
 
+def test_agent_calls_model_for_imaging_only_case_with_no_labs_or_history(sample_dicom):
+    """The bug this regression-tests: an MRI/X-ray with no accompanying
+    lab report or history text is real clinical input, not empty input --
+    it must reach the model (with the image attached), not abstain
+    pre-call just because structured_clinical_data happens to be empty."""
+    state = _base_state(
+        anonymized_patient_data={"imaging": [{"source_path": sample_dicom, "metadata": {}, "pixel_summary": {}}]}
+    )
+    caller = _CountingCaller(response=_fake_response())
+
+    result = diagnostic_prediction_agent(state, llm_caller=caller)
+
+    assert caller.calls == 1
+    assert result["stage_status"]["diagnostic_prediction"]["status"] == "ok"
+
+
 def test_agent_happy_path_produces_differential():
     state = _base_state(
         structured_clinical_data={
