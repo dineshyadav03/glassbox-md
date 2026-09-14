@@ -24,6 +24,7 @@ from pydicom.uid import ExplicitVRLittleEndian, generate_uid
 load_dotenv()
 
 from openai import APIConnectionError, AuthenticationError
+from pydantic import ValidationError
 
 from glassbox_md.agents.diagnostic_prediction import (
     CONFIDENCE_THRESHOLD,
@@ -87,17 +88,21 @@ def _fake_completion(content):
     return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=content))])
 
 
+_VALID_RESPONSE_JSON = '{"differential": [], "overall_confidence": 0.5, "reasoning_notes": "test"}'
+
+
 def test_call_openrouter_retries_transient_errors_then_succeeds():
     responses = [
         APIConnectionError(request=_fake_request()),
         APIConnectionError(request=_fake_request()),
-        _fake_completion('{"differential": []}'),
+        _fake_completion(_VALID_RESPONSE_JSON),
     ]
     client = _FakeClient(responses)
 
     result = _call_openrouter(client, "openrouter/free", [{"role": "user", "content": "hi"}])
 
-    assert result == '{"differential": []}'
+    assert isinstance(result, ModelDifferentialResponse)
+    assert result.overall_confidence == 0.5
     assert client.chat.completions.call_count == 3
 
 
@@ -116,7 +121,41 @@ def test_call_openrouter_gives_up_after_max_attempts():
     with pytest.raises(APIConnectionError):
         _call_openrouter(client, "openrouter/free", [{"role": "user", "content": "hi"}])
 
+
+def test_call_openrouter_retries_a_malformed_response_then_succeeds():
+    """Regression test for a real, observed failure: a live test got the
+    literal string "User Safety: safe" back from whatever model the free
+    router picked for an image request -- not valid JSON at all. A
+    different routed model on retry might actually follow instructions."""
+    responses = [
+        _fake_completion("User Safety: safe"),
+        _fake_completion(_VALID_RESPONSE_JSON),
+    ]
+    client = _FakeClient(responses)
+
+    result = _call_openrouter(client, "openrouter/free", [{"role": "user", "content": "hi"}])
+
+    assert isinstance(result, ModelDifferentialResponse)
+    assert client.chat.completions.call_count == 2
+
+
+def test_call_openrouter_gives_up_after_repeated_malformed_responses():
+    client = _FakeClient([_fake_completion("User Safety: safe") for _ in range(5)])
+
+    with pytest.raises(ValidationError):
+        _call_openrouter(client, "openrouter/free", [{"role": "user", "content": "hi"}])
+
     assert client.chat.completions.call_count == 3
+
+
+def test_call_openrouter_retries_an_empty_response():
+    responses = [_fake_completion(None), _fake_completion(_VALID_RESPONSE_JSON)]
+    client = _FakeClient(responses)
+
+    result = _call_openrouter(client, "openrouter/free", [{"role": "user", "content": "hi"}])
+
+    assert isinstance(result, ModelDifferentialResponse)
+    assert client.chat.completions.call_count == 2
 
 
 def _fake_response(confidence=0.8, conditions=None):

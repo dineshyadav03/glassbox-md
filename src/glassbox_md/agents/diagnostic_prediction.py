@@ -42,10 +42,15 @@ is used instead of the OpenAI SDK's stricter `.parse()`/`response_schema`
 helper, since the free router can land on any underlying model and not
 all of them support strict schema-constrained decoding; the exact
 required JSON shape is spelled out in `SYSTEM_INSTRUCTION` instead, and
-the response is validated against `ModelDifferentialResponse` by hand. A
-model that returns malformed JSON surfaces as a normal `failed` stage
-status via the same try/except already around the caller -- not a
-special case.
+the response is validated against `ModelDifferentialResponse` by hand,
+inside the same retry as the network call (see `_call_openrouter`) --
+not after it. This isn't hypothetical: a live test got the literal
+string `"User Safety: safe"` back from whatever model the free router
+picked for an image request, twice in a row -- a content-safety
+classifier's verdict leaking through instead of an actual answer.
+Retrying gives a different routed model a chance to behave; only after
+retries are exhausted does malformed output surface as a normal `failed`
+stage status via the try/except already around the caller.
 
 Two-stage abstention, not one:
   1. Pre-call: no labs, no history text, no imaging, AND no retrieved
@@ -89,7 +94,7 @@ from pathlib import Path
 from typing import Any, Callable, TypedDict
 
 from openai import APIConnectionError, APITimeoutError, InternalServerError, OpenAI, RateLimitError
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 
 from ..audit import audit_entry
@@ -107,11 +112,27 @@ OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 # exceptionally.
 REQUEST_TIMEOUT_SECONDS = 90.0
 
-# Retries only the transient cases (connection blips, timeouts, rate
-# limits, 5xx). Deliberately NOT auth/permission errors -- this project's
-# own Gemini attempt hit API_KEY_SERVICE_BLOCKED, and retrying a
-# permission error just burns attempts on something retrying can't fix.
-_RETRYABLE_ERRORS = (APIConnectionError, APITimeoutError, RateLimitError, InternalServerError)
+# Retries transient network cases (connection blips, timeouts, rate
+# limits, 5xx) AND a malformed/non-JSON response (ValidationError,
+# ValueError on an empty body). The latter is real, observed behavior,
+# not a hypothetical: a live test got the literal string "User Safety:
+# safe" back from whatever model openrouter/free picked for an image
+# request -- a content-safety classifier's verdict leaking through
+# instead of an actual answer, twice in a row from what was apparently
+# the same routed model. Since the free router can land on a different
+# underlying model on the next call, retrying a bad-content response is
+# a reasonable bet that a different model won't have the same problem --
+# unlike a permission error (this project's own Gemini attempt hit
+# API_KEY_SERVICE_BLOCKED), which retrying can never fix, so auth/
+# permission errors are deliberately excluded here.
+_RETRYABLE_ERRORS = (
+    APIConnectionError,
+    APITimeoutError,
+    RateLimitError,
+    InternalServerError,
+    ValidationError,
+    ValueError,
+)
 
 # Below this, a returned differential is treated as "insufficient evidence"
 # rather than a usable result, per the clinical-safety critique's abstention
@@ -241,12 +262,17 @@ def _build_prompt(structured_clinical_data: dict[str, Any], rag_literature_conte
     wait=wait_exponential(multiplier=0.5, min=0.5, max=4),
     reraise=True,
 )
-def _call_openrouter(client: OpenAI, model_name: str, messages: list[dict[str, Any]]) -> str:
-    """The actual network call, isolated so retry only wraps the part
-    that can be transiently wrong (connection blips, timeouts, rate
-    limits, 5xx) -- not the JSON parsing/validation that follows it,
-    which retrying can't fix. `reraise=True` means the caller sees the
-    original exception type after retries are exhausted, not a wrapper.
+def _call_openrouter(
+    client: OpenAI, model_name: str, messages: list[dict[str, Any]]
+) -> ModelDifferentialResponse:
+    """The network call AND the response validation, both inside the
+    retry -- deliberately, not just the network part. A malformed/non-
+    JSON response is retried the same as a transient network error, since
+    `openrouter/free` can land on a different underlying model on the
+    next attempt; a model that ignored the JSON instruction once isn't
+    necessarily the model a retry will get. `reraise=True` means the
+    caller sees the original exception type after retries are exhausted,
+    not a tenacity wrapper.
     """
     completion = client.chat.completions.create(
         model=model_name,
@@ -258,7 +284,7 @@ def _call_openrouter(client: OpenAI, model_name: str, messages: list[dict[str, A
     raw_content = completion.choices[0].message.content
     if not raw_content:
         raise ValueError("model returned an empty response")
-    return raw_content
+    return ModelDifferentialResponse.model_validate_json(raw_content)
 
 
 def _default_caller(prompt: str, image_path: str | None) -> ModelDifferentialResponse:
@@ -285,13 +311,12 @@ def _default_caller(prompt: str, image_path: str | None) -> ModelDifferentialRes
     # the free router can land on any underlying model, and not all of
     # them support strict schema-constrained decoding. The exact required
     # shape is spelled out in SYSTEM_INSTRUCTION instead, and validated
-    # by hand below.
+    # (with retry-on-malformed-response) inside _call_openrouter.
     messages = [
         {"role": "system", "content": SYSTEM_INSTRUCTION},
         {"role": "user", "content": content},
     ]
-    raw_content = _call_openrouter(client, model_name, messages)
-    return ModelDifferentialResponse.model_validate_json(raw_content)
+    return _call_openrouter(client, model_name, messages)
 
 
 def diagnostic_prediction_agent(

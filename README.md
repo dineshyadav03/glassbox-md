@@ -213,7 +213,12 @@ shouldn't have to read thirty bullet points to find the honest gaps:
 - **The LLM provider is a free-tier router** (`openrouter/free`), chosen
   after two dead ends with paid/blocked providers (see below). Expect
   ~70s latency and don't expect a fixed model identity from run to run --
-  not a production-grade reliability story.
+  not a production-grade reliability story. Concretely observed, not
+  hypothesized: a request with a synthetic brain-MRI-shaped image got
+  back a bare content-safety verdict instead of an answer, twice in a
+  row. Retried automatically now (see Design decisions), but whether the
+  underlying model can meaningfully interpret real medical imagery at
+  all -- safety-filtering aside -- has not been verified either way.
 - **No formal clinical validation** -- no accuracy, sensitivity, or
   specificity metrics against a labeled dataset, and none are claimed.
   This is a portfolio demonstration of an architecture, not a validated
@@ -379,6 +384,25 @@ shouldn't have to read thirty bullet points to find the honest gaps:
   free router's observed real-world latency is ~70s) live in
   `diagnostic_prediction.py`'s `_call_openrouter`, the one call that can
   actually be transiently wrong.
+- **What counts as "transiently wrong" includes a malformed response, not
+  just network errors -- found live, not hypothesized.** Uploading a
+  synthetic brain-MRI-shaped DICOM (skull ring, textured tissue,
+  ventricles -- not just noise) got back the literal string
+  `"User Safety: safe"` from whatever model `openrouter/free` routed the
+  request to, twice in a row -- a content-safety classifier's verdict
+  leaking through instead of an actual answer, not valid JSON at all. The
+  real API call succeeded (HTTP 200); the content was just unusable.
+  `_call_openrouter` now validates the response *inside* the same retry
+  as the network call, with `pydantic.ValidationError` and an empty-body
+  `ValueError` added to the retryable set -- since the free router can
+  land on a different underlying model each attempt, a model that
+  ignored the JSON instruction once isn't necessarily the model a retry
+  will get. Covered by `test_call_openrouter_retries_a_malformed_
+  response_then_succeeds` and `test_call_openrouter_gives_up_after_
+  repeated_malformed_responses` in `tests/test_diagnostic_prediction.py`.
+  Whether the underlying model can meaningfully interpret real medical
+  imagery at all, safety-filtering aside, remains unverified -- see
+  Known Limitations.
 - **The whole graph is tested end to end, offline.** `test_pipeline_runs_
   all_six_stages_with_audit_log_accumulating` builds a real synthetic PDF,
   runs it through the real compiled `StateGraph` (all six real agents,
