@@ -369,23 +369,30 @@ shouldn't have to read thirty bullet points to find the honest gaps:
   hypothesized: a request with a synthetic brain-MRI-shaped image got
   back a bare content-safety verdict instead of an answer, twice in a
   row. Retried automatically now (see Design decisions).
-- **Tested once against a real, non-synthetic image -- and the model's
-  specific reads of it were not trustworthy.** A real, CC-BY-4.0
-  pediatric chest X-ray labeled PNEUMONIA (Hugging Face
-  `hf-vision/chest-xray-pneumonia`, test split, row 300) was DICOM-wrapped
-  and run through the live app. The model never put pneumonia in its
-  differential. Its top entry was congenital heart disease, built around
-  a "central venous line" and "cardiomegaly" it reported seeing --
-  the image does have a genuine line-like artifact crossing the chest
-  (most likely an external ECG lead, not a catheter), but the cardiomegaly
-  call doesn't hold up on visual inspection of the same image. To its
-  credit, it correctly identified the image as a pediatric chest
-  radiograph and flagged the whole result at 0.15 confidence with
-  "clinical correlation is absolutely essential" -- so it isn't inventing
-  answers from nothing, but a real, specific-sounding finding in its
-  output is not evidence that finding is actually in the image. One
-  image, one run -- not a systematic evaluation, just the first honest
-  data point after multiple synthetic-only tests.
+- **Tested against 4 real, non-synthetic images -- mostly right on the
+  headline call, consistently wrong about hardware.** Real, CC-BY-4.0
+  pediatric chest X-rays (Hugging Face `hf-vision/chest-xray-pneumonia`,
+  test split: one NORMAL and three PNEUMONIA rows) were DICOM-wrapped and
+  run through the live app, one at a time. 3 of 4 landed a defensible top
+  call: the NORMAL case correctly topped with "normal pediatric chest
+  variant" (0.35), one PNEUMONIA case correctly topped with "right lower
+  lobe pneumonia" (0.40), and a second landed in the right family ("viral
+  bronchiolitis or mild viral pneumonia," 0.30). The fourth (the first one
+  tested, row 300) missed the pathology entirely -- top call congenital
+  heart disease, 0.15. A separate, repeatable failure mode showed up
+  independently of whether the headline call was right: on two different
+  images the model named specific external hardware that isn't what it
+  claimed -- a "central venous line" and, separately, a "port-a-cath" --
+  when the actual artifact in both cases (confirmed by zooming into the
+  same image) is a plain external clip/fastener, not an implanted or
+  indwelling device. So the pattern isn't "ignores the pixels" or
+  "hallucinates freely" -- it's closer to "usually gets the gist, will
+  confabulate a specific device label along the way, and confidence
+  doesn't reliably track which is happening" (0.40 on the correct call
+  that also had the fabricated port-a-cath; 0.15 on the one that missed
+  the pathology outright). n=4, all from one dataset, one sitting -- a
+  real signal, not a systematic evaluation across conditions, imaging
+  modalities, or patient populations.
 - **No formal clinical validation** -- no accuracy, sensitivity, or
   specificity metrics against a labeled dataset, and none are claimed.
   This is a portfolio demonstration of an architecture, not a validated
@@ -649,9 +656,10 @@ shouldn't have to read thirty bullet points to find the honest gaps:
   response_then_succeeds` and `test_call_openrouter_gives_up_after_
   repeated_malformed_responses` in `tests/test_diagnostic_prediction.py`.
   Whether the underlying model can meaningfully interpret real medical
-  imagery has since been tested live, once, against a real labeled chest
-  X-ray -- it engaged with the actual pixels rather than refusing, but
-  its specific findings didn't hold up; see Known Limitations.
+  imagery has since been tested live against 4 real labeled chest X-rays
+  -- it got the headline call right more often than not, but reliably
+  mislabeled incidental hardware in the image regardless; see Known
+  Limitations.
 - **The whole graph is tested end to end, offline.** `test_pipeline_runs_
   all_six_stages_with_audit_log_accumulating` builds a real synthetic PDF,
   runs it through the real compiled `StateGraph` (all six real agents,
