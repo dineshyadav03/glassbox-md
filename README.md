@@ -56,15 +56,36 @@ routing" under Design decisions below.
 
 **Phases 0-9 done -- MVP complete**, plus four post-MVP fixes found by
 live-testing the running app and by deliberately expanding validation
-past the original nine cases, and three post-MVP V2 enhancements (real
-MeSH-based concept matching for RAG, real case persistence, and
-broadened PII coverage, all below) closing gaps the project's own
-architecture critique and its own "Known limitations" section named
-from the start. All six agents, wired into one pipeline, with a working
-UI, validated across a spread of synthetic cases. 151 automated tests
-passing, plus two things pytest can't check by itself: a live
-OpenRouter call (Phase 5) and full manual runs of the UI in a real
-browser (Phase 8, revisited below) -- see both below.
+past the original nine cases, and four post-MVP V2 enhancements (real
+MeSH-based concept matching for RAG, real case persistence, broadened
+PII coverage, and expanding from 2 to 6 target conditions, all below)
+closing gaps the project's own architecture critique and its own "Known
+limitations" section named from the start. All six agents, wired into
+one pipeline, with a working UI, validated across a spread of synthetic
+cases. 154 automated tests passing, plus two things pytest can't check
+by itself: a live OpenRouter call (Phase 5) and full manual runs of the
+UI in a real browser (Phase 8, revisited below) -- see both below.
+
+**Condition coverage V2: 2 -> 6 target conditions, and a real finding
+that reframed what "scoped to N conditions" even means.** Research
+before implementing found there is no condition-rejection gate anywhere
+in this pipeline -- "two conditions" was purely a data-scoping
+convention across three dicts (`TERMINOLOGY_MAP`, `TARGET_CONDITION_
+QUERIES`, `CANONICAL_TERM_MESH_IDS`), none of which reject on absence;
+`DifferentialCondition.condition` was already an unconstrained `str`.
+Added hyperlipidemia and hypertension (both already partially wired
+from the RAG V2 pass -- real MeSH IDs already existed, and
+hyperlipidemia's labs were already 100% in `LAB_CONVERSIONS`) plus two
+genuinely new conditions, chronic kidney disease and hypothyroidism
+(a new TSH lab conversion -- an identity conversion, since mIU/L and
+µIU/mL are numerically identical unit spellings, unlike glucose/
+cholesterol's real molar-mass conversions). Both new MeSH IDs
+independently verified live against NCBI, same rigor as the original
+RAG V2 pass -- and the real preferred heading for "chronic kidney
+disease" turned out to be "Renal Insufficiency, Chronic," not the
+plain-English name, same situation as hyperlipidemia's real heading
+being the pluralized "Hyperlipidemias." 3 new tests, zero changes
+needed to any other agent's tests. See Design decisions below.
 
 **PII coverage V2: 12 of 18 HIPAA Safe Harbor categories, up from 8 --
 via entities Presidio already ships but this project wasn't requesting,
@@ -268,7 +289,7 @@ literature index once, offline:
 python scripts/build_literature_index.py
 ```
 
-This fetches PubMed abstracts for the project's two target conditions
+This fetches PubMed abstracts for the project's six target conditions
 and indexes them into `data/literature/chroma/`. Takes a few minutes;
 safe to re-run.
 
@@ -289,11 +310,19 @@ Scoped deliberately, not accidentally -- each of these is discussed in
 more depth under Design decisions below, but a portfolio reviewer
 shouldn't have to read thirty bullet points to find the honest gaps:
 
-- **Two conditions only** (type 2 diabetes, coronary artery disease), not
-  general medicine -- an unrecognized lab test or condition is rejected,
-  not silently guessed at.
+- **Six conditions only** (type 2 diabetes, coronary artery disease,
+  hyperlipidemia, hypertension, chronic kidney disease, hypothyroidism),
+  not general medicine. Only an unrecognized *lab test* is actually
+  rejected (`UnknownLabTestError`) -- condition names in the model's
+  differential are unconstrained free text; nothing in this pipeline
+  validates or restricts them. What "six conditions" really means:
+  these are the ones with real structured-lab support and/or a
+  literature index behind them -- a condition outside this set can
+  still appear in a differential (the model isn't gated), it just has
+  no dedicated lab conversion, terminology normalization, or concept-
+  matched literature to ground it.
 - **RAG now does real concept-level matching, not just flat vector
-  search -- but only for 6 terms, and not via UMLS.** Patient data is
+  search -- but only for 8 terms, and not via UMLS.** Patient data is
   matched to literature genuinely MeSH-indexed under the same clinical
   concept (real, checkable PubMed metadata -- see Design decisions),
   falling back to flat similarity outside that 6-term vocabulary or for
@@ -479,7 +508,8 @@ shouldn't have to read thirty bullet points to find the honest gaps:
   50-abstracts-per-condition index and querying it for "type 2 diabetes"
   returned 5 real citations, all concept-matched, all real PubMed URLs.
   Falls back to exactly the old flat-similarity behavior for anything
-  outside the 6 terms or for literature with no MeSH tags yet (many very
+  outside the vocabulary (8 terms as of the later 6-condition expansion,
+  see below) or for literature with no MeSH tags yet (many very
   recent articles aren't MeSH-indexed by NCBI yet either -- confirmed
   live: only 25 of 94 freshly-fetched abstracts had any MeSH tags at
   all), which is also why every one of the ~20 pre-existing RAG-adjacent
@@ -694,14 +724,44 @@ shouldn't have to read thirty bullet points to find the honest gaps:
   so that latency reads as expected behavior, not a hang. Verified live
   in a browser with a real OpenRouter call: a genuine 3-row rendered
   Markdown table with colored badges, not literal pipe characters.
-- **Scope: two conditions, not general medicine.** The Data Preparation
-  Agent's lab-conversion table (glucose, cholesterol panel, triglycerides,
-  creatinine, HbA1c) and terminology map are scoped to type 2 diabetes and
-  coronary artery disease specifically, chosen to match the UCI datasets
-  already planned for the RAG and SHAP-demo phases. An unrecognized lab
-  test raises `UnknownLabTestError` rather than silently passing the value
-  through unconverted -- expanding scope later means adding entries to
-  `LAB_CONVERSIONS`, not relaxing that check.
+- **Scope: six conditions, not general medicine -- and no condition
+  allowlist anywhere.** The Data Preparation Agent's lab-conversion
+  table (glucose, cholesterol panel, triglycerides, creatinine, HbA1c,
+  and -- since the 6-condition expansion -- TSH) and terminology map
+  are scoped to type 2 diabetes, coronary artery disease, hyperlipidemia,
+  hypertension, chronic kidney disease, and hypothyroidism, chosen
+  because each is primarily lab/history-driven with a well-defined
+  structured lab or clear terminology signature. An unrecognized *lab*
+  test raises `UnknownLabTestError` rather than silently passing the
+  value through unconverted -- but there is no equivalent gate on
+  condition names: `DifferentialCondition.condition` is a plain `str`,
+  and the model can already name any condition it wants in a
+  differential. "Scoped to six conditions" means these are the ones
+  with real structured-lab support and a concept-matched literature
+  index behind them, not a technical restriction on what the model can
+  say. Expanding further means adding entries to `LAB_CONVERSIONS`,
+  `TERMINOLOGY_MAP`, `controlled_vocabulary.py`'s
+  `CANONICAL_TERM_MESH_IDS`, and `TARGET_CONDITION_QUERIES` -- confirmed,
+  not assumed, by tracing every consumer of those four dicts end to end
+  when hyperlipidemia, hypertension, chronic kidney disease, and
+  hypothyroidism were added: none of them gate on absence, each degrades
+  gracefully (free-text pass-through, or RAG falling back to flat
+  similarity search) for anything not yet in these dicts. Both new MeSH
+  IDs were independently verified live against NCBI twice -- once during
+  research, once again during implementation before writing them into
+  code -- same rigor as the original RAG V2 pass. Live end-to-end
+  verification of all four newly-promoted conditions found a real,
+  honest wrinkle for hyperlipidemia specifically: a 50-abstract sample
+  came back with zero concept-matched citations (0 of 49 fetched
+  abstracts carried the real MeSH ID), while hypertension/CKD/
+  hypothyroidism all matched cleanly in the same run. Not a bug --
+  fetching a larger, 300-abstract sample found 19 correctly-tagged
+  abstracts, confirming this was the same "very recent articles aren't
+  MeSH-indexed by NCBI yet" characteristic already documented for the
+  original RAG V2 pass (25 of 94), just landing harder on whichever
+  condition's query happens to surface more very-recent results in a
+  small sample. Re-verified with the larger sample: hyperlipidemia then
+  returned 5 real citations, all concept-matched, all real PubMed URLs.
 - **The privacy sweep checks the whole state, not one field.**
   `test_case_planted_pii_absent_from_entire_final_state` (Phase 9)
   serializes the *entire* downstream state to JSON and searches for each

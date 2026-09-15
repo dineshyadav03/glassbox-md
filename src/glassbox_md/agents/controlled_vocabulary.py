@@ -2,7 +2,7 @@
 vocabulary -> literature graph described in medical_knowledge_rag.py's
 module docstring.
 
-Maps this project's own 6 canonical clinical terms (the values of
+Maps this project's own 8 canonical clinical terms (the values of
 data_preparation.TERMINOLOGY_MAP) to their real PubMed MeSH Descriptor
 UIs. Every ID below was resolved live against NCBI's E-utilities during
 development -- either by reading the actual `DescriptorName UI` off a
@@ -34,6 +34,13 @@ CANONICAL_TERM_MESH_IDS: dict[str, str] = {
     "hypertension": "D006973",  # Hypertension
     "hyperlipidemia": "D006949",  # Hyperlipidemias
     "hemoglobin a1c": "D006442",  # Glycated Hemoglobin
+    "chronic kidney disease": "D051436",  # Renal Insufficiency, Chronic --
+    # the real MeSH preferred heading; "Chronic Kidney Disease" is an
+    # entry-term synonym under it, not the descriptor name itself (same
+    # situation as "hyperlipidemia" above, whose real heading is plural,
+    # "Hyperlipidemias"). Confirmed live against NCBI: esearch on "Chronic
+    # Kidney Disease" resolves to this exact descriptor.
+    "hypothyroidism": "D007037",  # Hypothyroidism
 }
 
 _CANONICAL_TERM_PATTERN = re.compile(

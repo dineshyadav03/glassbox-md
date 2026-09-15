@@ -6,11 +6,19 @@ touches no external API or model, and was rated the lowest-risk agent in
 the whole pipeline -- a good place to prove the state-schema and node
 conventions from Phase 0 actually work before tackling anything harder.
 
-Scope for the MVP: unit conversion and terminology normalization for two
-cardiometabolic conditions -- type 2 diabetes and coronary artery disease
--- chosen to match the public datasets already planned for the RAG and
-SHAP-demo phases, rather than trying to cover every condition and lab
-panel that might eventually show up.
+Scope for the MVP: unit conversion and terminology normalization for six
+cardiometabolic-and-adjacent conditions -- type 2 diabetes, coronary
+artery disease, hyperlipidemia, hypertension, chronic kidney disease,
+and hypothyroidism -- chosen for the same reason the original two were:
+each is primarily lab/history-driven (not imaging- or ECG-diagnosed) and
+has a well-defined structured lab or clear terminology signature, rather
+than trying to cover every condition and lab panel that might eventually
+show up. Expanding further means adding entries to LAB_CONVERSIONS and
+TERMINOLOGY_MAP (and controlled_vocabulary.py's CANONICAL_TERM_MESH_IDS,
+and medical_knowledge_rag.py's TARGET_CONDITION_QUERIES) -- there's no
+condition allowlist or rejection gate anywhere in this pipeline; a
+condition simply gets no structured-lab/RAG-concept support until its
+data is added here.
 
 Expected shape of `anonymized_patient_data` (the Privacy Protection
 Agent's output, which doesn't exist yet as of Phase 1 -- this is the
@@ -44,7 +52,7 @@ STAGE_NAME = "data_preparation"
 
 class UnknownLabTestError(ValueError):
     """Raised when a lab test name isn't in LAB_CONVERSIONS -- this MVP's
-    scope is two conditions' worth of labs, not every test that exists."""
+    scope is six conditions' worth of labs, not every test that exists."""
 
 
 class UnsupportedUnitError(ValueError):
@@ -86,6 +94,11 @@ LAB_CONVERSIONS: dict[str, LabConversion] = {
     "hemoglobin_a1c": LabConversion(
         "mmol/mol", "%", lambda v: (v - 2.15) * 10.929, (20.0, 200.0)
     ),
+    # Unlike the conversions above, mIU/L and µIU/mL are numerically
+    # identical by unit definition (micro per mL = milli per L) -- an
+    # identity conversion, not a real molar-mass formula. Both spellings
+    # are common in real lab reports for TSH specifically.
+    "tsh": LabConversion("mIU/L", "µIU/mL", lambda v: v, (0.01, 100.0)),
 }
 
 # Abbreviations and synonyms -> the one canonical term this project uses.
@@ -109,6 +122,11 @@ TERMINOLOGY_MAP: dict[str, str] = {
     "hba1c": "hemoglobin a1c",
     "glycated hemoglobin": "hemoglobin a1c",
     "glycosylated hemoglobin": "hemoglobin a1c",
+    "ckd": "chronic kidney disease",
+    "chronic renal failure": "chronic kidney disease",
+    "chronic renal insufficiency": "chronic kidney disease",
+    "hypothyroid": "hypothyroidism",
+    "underactive thyroid": "hypothyroidism",
 }
 
 _TERMINOLOGY_PATTERN = re.compile(

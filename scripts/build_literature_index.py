@@ -1,4 +1,4 @@
-"""Fetches PubMed abstracts for the project's two target conditions and
+"""Fetches PubMed abstracts for the project's six target conditions and
 builds the ChromaDB literature index the Medical Knowledge RAG Agent
 queries at pipeline run time.
 
@@ -42,7 +42,7 @@ def main() -> None:
         "--per-condition",
         type=int,
         default=750,
-        help="Max abstracts to fetch per condition (default 750 -- ~1500 total across both).",
+        help="Max abstracts to fetch per condition (default 750 -- ~4500 total across all six).",
     )
     args = parser.parse_args()
 

@@ -86,8 +86,9 @@ version only ever attached `imaging[0]`, silently dropping every image
 past the first regardless of how many were uploaded, found by a
 validation test that asked "what happens with two MRIs?" instead of
 assuming one was representative. A conversion failure on one image is
-dropped from the prompt rather than failing the whole call: the two
-conditions this MVP targets (type 2 diabetes, coronary artery disease)
+dropped from the prompt rather than failing the whole call: the six
+conditions this MVP targets (type 2 diabetes, coronary artery disease,
+hyperlipidemia, hypertension, chronic kidney disease, hypothyroidism)
 are primarily lab/history-driven, not imaging-diagnosed, so a missing or
 unreadable image degrades that one image, not the whole case.
 """

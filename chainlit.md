@@ -19,7 +19,7 @@ the result was reached, not just what it was:
 1. **Document Parser** -- extracts text/tables from PDFs, metadata from DICOM
 2. **Privacy Protection** -- redacts identifying information, extracts structured lab values
 3. **Data Preparation** -- normalizes units and terminology
-4. **Medical Knowledge RAG** -- retrieves relevant literature (type 2 diabetes, coronary artery disease)
+4. **Medical Knowledge RAG** -- retrieves relevant literature (type 2 diabetes, coronary artery disease, hyperlipidemia, hypertension, chronic kidney disease, hypothyroidism)
 5. **Diagnostic Prediction** -- produces a ranked differential, never a single verdict
 6. **Explainability** -- assembles a citation-grounded narrative and a real SHAP demo
 

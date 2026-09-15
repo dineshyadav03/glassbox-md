@@ -61,6 +61,22 @@ def test_test_name_matching_is_case_and_space_insensitive():
     assert result["unit"] == "mmol/L"
 
 
+def test_tsh_canonical_and_us_unit_are_numerically_identical():
+    """Unlike glucose/cholesterol's real molar-mass conversions, mIU/L and
+    µIU/mL are numerically identical by unit definition (micro per mL =
+    milli per L) -- both spellings of the same reading should produce
+    the identical canonical value, not just a converted one."""
+    canonical = convert_lab_value("tsh", 2.5, "mIU/L")
+    us = convert_lab_value("tsh", 2.5, "µIU/mL")
+    assert canonical["value"] == us["value"] == 2.5
+    assert canonical["unit"] == us["unit"] == "mIU/L"
+
+
+def test_tsh_suppressed_value_flagged_implausible():
+    result = convert_lab_value("tsh", 0.001, "mIU/L")
+    assert result["plausible"] is False
+
+
 # --- normalize_lab_panel ------------------------------------------------
 
 def test_panel_skips_missing_values_without_raising():
@@ -94,6 +110,13 @@ def test_empty_text_returned_unchanged():
 def test_unrecognized_terms_left_alone():
     text = "Patient reports mild headache."
     assert normalize_terminology(text) == text
+
+
+def test_replaces_ckd_and_hypothyroid_synonyms():
+    text = "Pt has CKD, hypothyroid on levothyroxine."
+    result = normalize_terminology(text)
+    assert "chronic kidney disease" in result
+    assert "hypothyroidism" in result
 
 
 # --- data_preparation_agent (the LangGraph node) -------------------------

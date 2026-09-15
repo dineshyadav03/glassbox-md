@@ -5,10 +5,11 @@ ChromaDB collection of PubMed abstracts, built ahead of time (see
 `scripts/build_literature_index.py`), against the patient's structured
 clinical data -- not by fetching literature live on every pipeline run.
 
-Scope: the same two conditions as the Data Preparation Agent (type 2
-diabetes, coronary artery disease) -- retrieving literature for a
-condition this MVP has no labs or terminology normalization for wouldn't
-be useful context anyway.
+Scope: the same six conditions as the Data Preparation Agent (type 2
+diabetes, coronary artery disease, hyperlipidemia, hypertension, chronic
+kidney disease, hypothyroidism) -- retrieving literature for a condition
+this MVP has no labs or terminology normalization for wouldn't be useful
+context anyway.
 
 V2: a real, checkable patient -> controlled vocabulary -> literature
 match, not just the V1 flat vector search. The architecture critique's
@@ -16,7 +17,7 @@ match, not just the V1 flat vector search. The architecture critique's
 tier; this project doesn't have a UTS license, so it uses PubMed's own
 MeSH indexing instead (public domain, and already present in every
 EFetch response this module fetches -- see fetch_pubmed_abstracts's
-mesh_ids parsing). controlled_vocabulary.py maps this project's 6
+mesh_ids parsing). controlled_vocabulary.py maps this project's 8
 canonical clinical terms to their real MeSH Descriptor UIs (verified
 live against NCBI, not typed from memory). `query_literature_by_concept`
 retrieves literature genuinely MeSH-tagged under the same concept the
@@ -24,7 +25,7 @@ patient's data maps to -- real traceability, not embedding proximity --
 and every citation records which canonical term produced it (or `None`
 for a plain similarity match) via `Citation.matched_concept`.
 
-Still not the full UMLS-backed graph the critique described: 6 terms,
+Still not the full UMLS-backed graph the critique described: 8 terms,
 not a real ontology; a Python-side linear scan over the whole corpus for
 concept eligibility (fine at this MVP's few-thousand-abstract scale,
 documented as a V3 scalability item -- a real inverted index would be
@@ -91,13 +92,17 @@ _NCBI_RATE_LIMIT_DELAY_SECONDS = 0.34  # stays under 3 req/sec without an API ke
 
 DEFAULT_COLLECTION_NAME = "medical_literature"
 
-# The same two conditions Data Preparation and the Privacy agent's
+# The same six conditions Data Preparation and the Privacy agent's
 # terminology map are scoped to. PubMed's [Title/Abstract] field tag
 # keeps the search reasonably precise without requiring exact MeSH term
 # validation, which would add another moving part for an MVP corpus.
 TARGET_CONDITION_QUERIES = {
     "type_2_diabetes": '"type 2 diabetes"[Title/Abstract]',
     "coronary_artery_disease": '"coronary artery disease"[Title/Abstract]',
+    "hyperlipidemia": '"hyperlipidemia"[Title/Abstract]',
+    "hypertension": '"hypertension"[Title/Abstract]',
+    "chronic_kidney_disease": '"chronic kidney disease"[Title/Abstract]',
+    "hypothyroidism": '"hypothyroidism"[Title/Abstract]',
 }
 
 
