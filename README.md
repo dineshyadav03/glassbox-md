@@ -1,8 +1,8 @@
 # Glassbox MD
 
 An explainable medical AI agent pipeline: six agents that turn imaging,
-labs, and symptoms into a diagnosis a clinician can actually audit, not
-just trust.
+labs, and symptoms into a ranked differential a clinician can actually
+audit, not just trust.
 
 > **Educational / portfolio demonstration of a multi-agent explainable-AI
 > architecture. Not an FDA-cleared or clinically validated medical device.
@@ -119,7 +119,7 @@ not just in pytest: all 6 MeSH Descriptor IDs were resolved against real
 NCBI data during development (not typed from memory), a real
 50-abstracts-per-condition index was rebuilt from live PubMed, and a
 real end-to-end query for "type 2 diabetes" returned 5 citations, all
-concept-matched, all real PubMed URLs. 28 new tests
+concept-matched, all real PubMed URLs. 18 new tests
 (`test_controlled_vocabulary.py`, extended `test_medical_knowledge_rag.py`);
 zero changes needed to the ~20 pre-existing RAG-adjacent tests, since
 their fixture data has no MeSH metadata and so exercises the same
@@ -184,9 +184,9 @@ genuinely empty document (produces a real "insufficient evidence" report
 instead of dying partway through -- see the imaging-only fix above), a
 DICOM image alongside lab data (PHI-bearing tags confirmed stripped), an
 imaging-only case (reaches a full report instead of halting), a
-close-call differential (correctly flagged for review), a case with five
-different planted PHI-shaped identifiers (name, DOB, SSN, MRN, DICOM
-patient name) swept against the *entire* downstream state as one
+close-call differential (correctly flagged for review), a case with six
+different planted PHI-shaped identifiers (name, DOB, SSN, MRN, account
+number, DICOM patient name) swept against the *entire* downstream state as one
 serialized blob -- not just checked in one field the way Phase 3's own
 test did -- confirming none of them survive anywhere past the Privacy
 Protection Agent, and five more added after a second pass specifically
@@ -240,12 +240,14 @@ healthcare/
 │   ├── state.py               MedicalPipelineState -- the LangGraph state schema
 │   ├── audit.py                shared helper for building audit log entries
 │   ├── disclaimer.py          the intended-use disclaimer, defined once
+│   ├── case_store.py          local SQLite persistence for completed cases (done)
 │   ├── pipeline.py             wires all six agents into one LangGraph StateGraph (done)
 │   └── agents/
 │       ├── data_preparation.py   unit conversion + terminology normalization (done)
 │       ├── document_parser.py    PDF (pdfplumber) + DICOM (pydicom), separate paths (done)
 │       ├── privacy_protection.py NER redaction, lab extraction, DICOM tag stripping (done)
 │       ├── medical_knowledge_rag.py PubMed fetch + ChromaDB index/query (done)
+│       ├── controlled_vocabulary.py canonical term -> real MeSH Descriptor UI map (done)
 │       ├── diagnostic_prediction.py Structured differential via OpenRouter (done)
 │       └── explainability.py       Citation-grounded narrative + real SHAP demo (done)
 ├── scripts/
@@ -255,7 +257,8 @@ healthcare/
 │   ├── imaging/                public/synthetic imaging data only
 │   ├── tabular/                public tabular data, for the real SHAP demo
 │   ├── literature/             PubMed abstract cache for the RAG agent
-│   └── synthetic_patients/     self-generated fake documents, for testing redaction
+│   ├── synthetic_patients/     self-generated fake documents, for testing redaction
+│   └── cases/                  local case_store.py SQLite file, gitignored
 ├── tests/
 │   ├── test_state.py           tests for the privacy-boundary runtime guard
 │   ├── test_pipeline.py        conditional routing + full end-to-end graph test
@@ -325,7 +328,7 @@ shouldn't have to read thirty bullet points to find the honest gaps:
   search -- but only for 8 terms, and not via UMLS.** Patient data is
   matched to literature genuinely MeSH-indexed under the same clinical
   concept (real, checkable PubMed metadata -- see Design decisions),
-  falling back to flat similarity outside that 6-term vocabulary or for
+  falling back to flat similarity outside that 8-term vocabulary or for
   literature with no MeSH tags yet. Still not the full UMLS-backed
   3-tier graph the original architecture critique recommended -- this
   project doesn't have a UTS license, and MeSH is a real, free
