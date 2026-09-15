@@ -37,7 +37,7 @@ flowchart TD
     P2 -->|failed| END2(("halt"))
     P2 --> P3["3 · Data Preparation<br/>unit + terminology normalization"]
     P3 -->|failed| END3(("halt"))
-    P3 --> P4["4 · Medical Knowledge RAG<br/>ChromaDB + PubMed"]
+    P3 --> P4["4 · Medical Knowledge RAG<br/>ChromaDB + PubMed + MeSH"]
     P4 -->|failed| END4(("halt"))
     P4 --> P5["5 · Diagnostic Prediction<br/>OpenRouter (openrouter/free)"]
     P5 -->|failed| END5(("halt"))
@@ -56,11 +56,34 @@ routing" under Design decisions below.
 
 **Phases 0-9 done -- MVP complete**, plus four post-MVP fixes found by
 live-testing the running app and by deliberately expanding validation
-past the original nine cases (see below). All six agents, wired into one
-pipeline, with a working UI, validated across a spread of synthetic
-cases. 111 automated tests passing, plus two things pytest can't check
-by itself: a live OpenRouter call (Phase 5) and full manual runs of the
-UI in a real browser (Phase 8, revisited below) -- see both below.
+past the original nine cases, and one post-MVP V2 enhancement (real
+MeSH-based concept matching for RAG, see below) closing a gap the
+project's own architecture critique named from the start. All six
+agents, wired into one pipeline, with a working UI, validated across a
+spread of synthetic cases. 130 automated tests passing, plus two things
+pytest can't check by itself: a live OpenRouter call (Phase 5) and full
+manual runs of the UI in a real browser (Phase 8, revisited below) --
+see both below.
+
+**RAG V2: patient data now matches literature via real MeSH concept
+IDs, not just embedding similarity.** The original architecture
+critique recommended a 3-tier patient -> literature -> UMLS graph for
+real citation traceability; this project has no UMLS/UTS license, so it
+uses PubMed's own real MeSH indexing instead -- public, free, and
+already present in every PubMed record this project fetches. Covers the
+same 6 canonical clinical terms `data_preparation.py`'s
+`TERMINOLOGY_MAP` already normalizes to; falls back to the old flat
+similarity search for anything outside that vocabulary. Verified live,
+not just in pytest: all 6 MeSH Descriptor IDs were resolved against real
+NCBI data during development (not typed from memory), a real
+50-abstracts-per-condition index was rebuilt from live PubMed, and a
+real end-to-end query for "type 2 diabetes" returned 5 citations, all
+concept-matched, all real PubMed URLs. 28 new tests
+(`test_controlled_vocabulary.py`, extended `test_medical_knowledge_rag.py`);
+zero changes needed to the ~20 pre-existing RAG-adjacent tests, since
+their fixture data has no MeSH metadata and so exercises the same
+fallback path the old flat search always did. See Design decisions
+below for the full story.
 
 Run it: `chainlit run app.py -w`, then open the local URL it prints.
 
@@ -230,9 +253,15 @@ shouldn't have to read thirty bullet points to find the honest gaps:
 - **Two conditions only** (type 2 diabetes, coronary artery disease), not
   general medicine -- an unrecognized lab test or condition is rejected,
   not silently guessed at.
-- **RAG is flat vector search**, not the 3-tier graph (patient →
-  literature → controlled vocabulary) the project's own architecture
-  critique recommended for real citation traceability. A V2 item.
+- **RAG now does real concept-level matching, not just flat vector
+  search -- but only for 6 terms, and not via UMLS.** Patient data is
+  matched to literature genuinely MeSH-indexed under the same clinical
+  concept (real, checkable PubMed metadata -- see Design decisions),
+  falling back to flat similarity outside that 6-term vocabulary or for
+  literature with no MeSH tags yet. Still not the full UMLS-backed
+  3-tier graph the original architecture critique recommended -- this
+  project doesn't have a UTS license, and MeSH is a real, free
+  substitute for the controlled-vocabulary tier, not the same ontology.
 - **The SHAP demo never explains the current patient.** It runs on a
   public dataset, by design, and says so in the report -- see why under
   Design decisions. Explaining an actual case is the citation-grounded
@@ -356,6 +385,34 @@ shouldn't have to read thirty bullet points to find the honest gaps:
   abstracts once, offline; the agent only ever queries the already-built
   ChromaDB collection at pipeline run time. Re-running the script is safe
   -- indexing uses upsert, so existing PMIDs update in place.
+- **RAG's concept-matching tier uses real MeSH IDs, verified live
+  against NCBI, not typed from memory.** The architecture critique's
+  3-tier design named UMLS as the controlled-vocabulary layer; this
+  project has no UTS license, so `controlled_vocabulary.py` uses PubMed's
+  own MeSH indexing instead -- public domain, and already present in
+  every EFetch response this project fetches (previously parsed for
+  nothing). Each of the 6 canonical-term -> MeSH-Descriptor-UI mappings
+  was resolved by querying live NCBI E-utilities during development (one
+  real on-topic article's actual `DescriptorName UI`, or for narrower
+  terms, `db=mesh`'s own `ds_meshui` field cross-checked against its
+  entry-term list) -- not guessed or recalled, because a wrong ID would
+  silently match the wrong concept. `query_literature_by_concept` finds
+  eligible literature via a Python-side scan of stored `mesh_ids`
+  metadata (Chroma's `where` has no substring-containment operator for a
+  comma-joined string) and then ranks that eligible subset with a normal
+  `where={"pmid": {"$in": [...]}}` query -- fine at this MVP's
+  few-thousand-abstract scale, a documented V3 item (a real index) at an
+  order of magnitude more. Live-verified end to end: rebuilding a real
+  50-abstracts-per-condition index and querying it for "type 2 diabetes"
+  returned 5 real citations, all concept-matched, all real PubMed URLs.
+  Falls back to exactly the old flat-similarity behavior for anything
+  outside the 6 terms or for literature with no MeSH tags yet (many very
+  recent articles aren't MeSH-indexed by NCBI yet either -- confirmed
+  live: only 25 of 94 freshly-fetched abstracts had any MeSH tags at
+  all), which is also why every one of the ~20 pre-existing RAG-adjacent
+  tests across `test_validation.py`/`test_pipeline.py` needed zero
+  changes -- their fixture abstracts simply have no MeSH metadata, so
+  they exercise the same fallback path unchanged.
 - **Diagnostic Prediction Agent output is a ranked differential, never
   "the diagnosis."** `DifferentialCondition` entries carry a likelihood
   and evidence citations, not a single verdict, per the clinical-safety

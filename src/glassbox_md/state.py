@@ -17,7 +17,7 @@ the state itself, not something the UI has to reconstruct after the fact.
 from __future__ import annotations
 
 import operator
-from typing import Annotated, Any, Literal, TypedDict
+from typing import Annotated, Any, Literal, NotRequired, TypedDict
 
 # Agents 1-6, in pipeline order. Used as keys into stage_status and as the
 # `stage` value in audit log entries, so every part of the codebase names
@@ -65,12 +65,21 @@ class Citation(TypedDict):
     agent and threaded through to the final explainable report -- so the
     explanation can point at the literature it actually used, not just the
     prediction agent that consumed it upstream.
+
+    `matched_concept` is `NotRequired` (not just `| None`) so every
+    existing call site constructing a Citation before this field existed
+    -- there are 20+, mostly test fixtures -- keeps working unmodified.
+    Set to the canonical clinical term (e.g. "type 2 diabetes") this
+    citation was retrieved for via real MeSH-concept matching (see
+    controlled_vocabulary.py); `None` (or absent) means it came back from
+    flat similarity search instead, with no concept-level traceability.
     """
 
     source_id: str  # e.g. a PubMed ID
     title: str
     url: str
     passage: str
+    matched_concept: NotRequired[str | None]
 
 
 class ExplainableReport(TypedDict):

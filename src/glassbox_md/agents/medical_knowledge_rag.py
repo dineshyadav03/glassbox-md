@@ -10,14 +10,33 @@ diabetes, coronary artery disease) -- retrieving literature for a
 condition this MVP has no labs or terminology normalization for wouldn't
 be useful context anyway.
 
-MVP design, not yet MedGraphRAG-style: flat vector similarity over roughly
-500-2,000 PubMed abstracts, per the roadmap's phased plan. The 3-tier
-graph (patient -> literature -> UMLS) the architecture critique
-recommended is a V2 item. What this agent does do, as a partial,
-honestly-scoped step toward that traceability goal even in the flat
-version: every retrieved passage carries its PMID, title, and PubMed URL,
-so a citation can be checked against its actual source rather than just
-trusted -- see `rag_literature_context`'s `Citation` shape in state.py.
+V2: a real, checkable patient -> controlled vocabulary -> literature
+match, not just the V1 flat vector search. The architecture critique's
+3-tier graph recommendation named UMLS as the controlled-vocabulary
+tier; this project doesn't have a UTS license, so it uses PubMed's own
+MeSH indexing instead (public domain, and already present in every
+EFetch response this module fetches -- see fetch_pubmed_abstracts's
+mesh_ids parsing). controlled_vocabulary.py maps this project's 6
+canonical clinical terms to their real MeSH Descriptor UIs (verified
+live against NCBI, not typed from memory). `query_literature_by_concept`
+retrieves literature genuinely MeSH-tagged under the same concept the
+patient's data maps to -- real traceability, not embedding proximity --
+and every citation records which canonical term produced it (or `None`
+for a plain similarity match) via `Citation.matched_concept`.
+
+Still not the full UMLS-backed graph the critique described: 6 terms,
+not a real ontology; a Python-side linear scan over the whole corpus for
+concept eligibility (fine at this MVP's few-thousand-abstract scale,
+documented as a V3 scalability item -- a real inverted index would be
+needed an order of magnitude up, same kind of explicit cap as
+MAX_IMAGES_PER_CALL elsewhere in this codebase); and it degrades
+gracefully to exactly the old flat-similarity behavior whenever a
+patient's data names no known canonical term, or a stored abstract has
+no MeSH tags yet (a very recent article, or an index built before this
+change -- re-running build_literature_index.py, already idempotent via
+upsert, backfills it). Every retrieved passage still carries its PMID,
+title, and PubMed URL either way, so a citation can always be checked
+against its actual source.
 
 Two dependency swaps from the roadmap's original plan, both for the same
 reason as earlier phases -- real functionality, smaller footprint:
@@ -62,6 +81,7 @@ from chromadb import Collection
 
 from ..audit import audit_entry
 from ..state import Citation, MedicalPipelineState, update_stage_status
+from .controlled_vocabulary import CANONICAL_TERM_MESH_IDS, match_canonical_terms
 
 STAGE_NAME = "medical_knowledge_rag"
 
@@ -86,6 +106,7 @@ class PubMedAbstract(TypedDict):
     title: str
     abstract: str
     url: str
+    mesh_ids: list[str]
 
 
 def _eutils_request(endpoint: str, params: dict[str, str]) -> bytes:
@@ -129,6 +150,16 @@ def fetch_pubmed_abstracts(
             pmid = pmid_el.text.strip() if pmid_el is not None and pmid_el.text else ""
             title = "".join(title_el.itertext()).strip() if title_el is not None else ""
             abstract = " ".join("".join(part.itertext()) for part in abstract_parts).strip()
+            # Real MeSH indexing, when present -- an article too recent to
+            # be MeSH-indexed yet naturally yields [], same "degrade
+            # gracefully" treatment as everywhere else in this pipeline.
+            mesh_ids = list(
+                dict.fromkeys(
+                    descriptor.get("UI", "")
+                    for descriptor in article.findall(".//MeshHeadingList/MeshHeading/DescriptorName")
+                    if descriptor.get("UI")
+                )
+            )
 
             if pmid and abstract:
                 results.append(
@@ -137,6 +168,7 @@ def fetch_pubmed_abstracts(
                         title=title,
                         abstract=abstract,
                         url=f"https://pubmed.ncbi.nlm.nih.gov/{pmid}/",
+                        mesh_ids=mesh_ids,
                     )
                 )
 
@@ -161,7 +193,19 @@ def build_literature_collection(
         collection.upsert(
             ids=[a["pmid"] for a in abstracts],
             documents=[f"{a['title']}\n{a['abstract']}" for a in abstracts],
-            metadatas=[{"pmid": a["pmid"], "title": a["title"], "url": a["url"]} for a in abstracts],
+            metadatas=[
+                {
+                    "pmid": a["pmid"],
+                    "title": a["title"],
+                    "url": a["url"],
+                    # Comma-joined: Chroma metadata values must be scalar.
+                    # `.get()`, not `a["mesh_ids"]` -- pre-V2 callers (most
+                    # test fixtures) pass raw dicts with no "mesh_ids" key
+                    # at all, and must not KeyError here.
+                    "mesh_ids": ",".join(a.get("mesh_ids") or []),
+                }
+                for a in abstracts
+            ],
         )
     return collection
 
@@ -187,9 +231,79 @@ def query_literature(collection: Collection, query_text: str, n_results: int = 5
                 title=metadata["title"],
                 url=metadata["url"],
                 passage=passage,
+                matched_concept=None,
             )
         )
     return citations
+
+
+def query_literature_by_concept(
+    collection: Collection, query_text: str, concept_ids: dict[str, str], n_results: int = 5
+) -> list[Citation]:
+    """Tier-2-to-tier-3 retrieval: literature whose stored `mesh_ids`
+    metadata contains at least one of the patient's matched concept IDs
+    (`concept_ids`, canonical term -> real MeSH Descriptor UI -- see
+    controlled_vocabulary.py), ranked by embedding similarity within
+    that eligible subset. Every returned Citation's `matched_concept` is
+    the canonical term it was retrieved for -- real, checkable
+    traceability, not just "these embeddings are close."
+
+    Two Chroma calls, not one: `where` has no substring-containment
+    operator for the comma-joined `mesh_ids` string, so eligibility is
+    found via a Python-side linear scan of the collection's metadata
+    first (cheap at this MVP's scale -- a few thousand abstracts at
+    most, per build_literature_index.py's own defaults; a real inverted
+    index would be needed at 10x that, see this module's docstring).
+    Ranking then reuses `collection.query(..., where={"pmid": {"$in":
+    ...}})` -- `$in` on an exact scalar value IS a normal, stable part
+    of Chroma's `where` DSL, unlike substring containment.
+
+    Returns [] if the collection is empty, no concept_ids were given, no
+    query text, or nothing in the corpus matches any of them.
+    """
+    count = collection.count()
+    if count == 0 or not concept_ids or not query_text.strip():
+        return []
+
+    wanted_mesh_ids = set(concept_ids.values())
+    term_by_mesh_id = {mesh_id: term for term, mesh_id in concept_ids.items()}
+
+    all_metadata = collection.get(include=["metadatas"])["metadatas"]
+    eligible_pmids: list[str] = []
+    matched_term_by_pmid: dict[str, str] = {}
+    for metadata in all_metadata:
+        stored_mesh_ids = set(filter(None, (metadata.get("mesh_ids") or "").split(",")))
+        hit = stored_mesh_ids & wanted_mesh_ids
+        if hit:
+            pmid = metadata["pmid"]
+            eligible_pmids.append(pmid)
+            # An abstract can be MeSH-tagged with more than one of the
+            # patient's matched concepts -- label it with one,
+            # deterministically, rather than an arbitrary set order.
+            # Doesn't affect eligibility, only which term gets credited.
+            matched_term_by_pmid[pmid] = term_by_mesh_id[sorted(hit)[0]]
+
+    if not eligible_pmids:
+        return []
+
+    results = collection.query(
+        query_texts=[query_text],
+        n_results=min(n_results, len(eligible_pmids)),
+        where={"pmid": {"$in": eligible_pmids}},
+    )
+    documents = results.get("documents") or [[]]
+    metadatas = results.get("metadatas") or [[]]
+
+    return [
+        Citation(
+            source_id=metadata["pmid"],
+            title=metadata["title"],
+            url=metadata["url"],
+            passage=passage,
+            matched_concept=matched_term_by_pmid[metadata["pmid"]],
+        )
+        for passage, metadata in zip(documents[0], metadatas[0])
+    ]
 
 
 def _build_query_text(structured_clinical_data: dict[str, Any]) -> str:
@@ -225,7 +339,32 @@ def medical_knowledge_rag_agent(
     if collection is None:
         collection = _default_collection()
 
-    citations = query_literature(collection, query_text, n_results=5) if query_text.strip() else []
+    citations: list[Citation] = []
+    concept_matched_count = 0
+    if query_text.strip():
+        matched_terms = match_canonical_terms(query_text)
+        concept_ids = {term: CANONICAL_TERM_MESH_IDS[term] for term in matched_terms}
+        if concept_ids:
+            citations = query_literature_by_concept(collection, query_text, concept_ids, n_results=5)
+            concept_matched_count = len(citations)
+
+        # Top up to 5 with flat similarity search -- covers both "no
+        # canonical term present at all" (concept_ids empty, full
+        # fallback) and "concept match found fewer than 5" (a partial
+        # top-up). Over-fetch by the number already found as a cheap
+        # buffer against overlap; a slight shortfall of the 5-result cap
+        # in a heavily-overlapping corpus is an acceptable MVP
+        # imprecision, not worth a more elaborate top-up algorithm.
+        remaining = 5 - len(citations)
+        if remaining > 0:
+            seen_ids = {c["source_id"] for c in citations}
+            fallback = query_literature(collection, query_text, n_results=remaining + len(seen_ids))
+            for citation in fallback:
+                if citation["source_id"] not in seen_ids:
+                    citations.append(citation)
+                    seen_ids.add(citation["source_id"])
+                if len(citations) >= 5:
+                    break
 
     if not citations:
         message = (
@@ -235,7 +374,7 @@ def medical_knowledge_rag_agent(
         summary = message
     else:
         status = {"status": "ok", "message": None}
-        summary = f"retrieved {len(citations)} literature citation(s)"
+        summary = f"retrieved {len(citations)} literature citation(s) ({concept_matched_count} concept-matched)"
 
     return {
         "rag_literature_context": citations,
