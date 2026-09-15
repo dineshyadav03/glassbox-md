@@ -291,6 +291,7 @@ _PLANTED = {
     "dob": "November 2, 1978",
     "ssn": "418-27-9053",  # not the canonical 123-45-6789 -- see test_privacy_protection.py
     "mrn": "8823410",
+    "account": "77049912233",
     "dicom_patient_name": "Rao^Priyanka",
 }
 
@@ -305,6 +306,7 @@ def test_case_planted_pii_absent_from_entire_final_state(tmp_path):
             f"DOB: {_PLANTED['dob']}",
             f"SSN: {_PLANTED['ssn']}",
             f"MRN: {_PLANTED['mrn']}",
+            f"Account #: {_PLANTED['account']}",
             "History: Patient has type 2 diabetes.",
         ],
         table=table,

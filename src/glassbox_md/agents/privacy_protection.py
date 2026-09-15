@@ -23,25 +23,102 @@ patient's chart -- neither is the right label for a de-identification
 pipeline. What follows is "HIPAA Safe-Harbor-*aligned*" de-identification,
 scoped honestly below, not "compliant."
 
-Coverage against the 18 HIPAA Safe Harbor identifiers (45 CFR 164.514):
+Coverage against the 18 HIPAA Safe Harbor identifiers (45 CFR 164.514) --
+12 of 18, up from an initial 8 (see README's "Known limitations" for the
+same count kept in sync):
   covered via spaCy NER + Presidio     -- names, geographic subdivisions,
                                            dates, phone/fax numbers,
                                            email addresses, SSNs, URLs,
-                                           IP addresses
-  covered via a custom pattern         -- medical record / patient ID
-    recognizer                            numbers ("any other unique
-                                           identifying number")
+                                           IP addresses, ITINs/tax IDs
+                                           (US_ITIN -- same catch-all
+                                           category as the custom pattern
+                                           below, a materially different
+                                           identifier shape), Medicare
+                                           Beneficiary Identifiers
+                                           (US_MBI -- HIPAA's own
+                                           "health plan beneficiary
+                                           numbers" category, #9),
+                                           DEA/medical license numbers
+                                           (MEDICAL_LICENSE -- the one
+                                           Presidio-native recognizer
+                                           here with a real Luhn
+                                           checksum, not just a regex
+                                           shape)
+  covered via custom patterns          -- medical record/patient ID
+    (label-gated: an explicit label       numbers, account numbers
+    like "MRN:"/"Account #:"/"VIN:"        (#10), and vehicle
+    must appear immediately before         identification numbers (#12,
+    the value, so a bare number            VIN only -- see below), each
+    elsewhere in a note is never            requiring an explicit label
+    mistaken for one of these)              to avoid false-positiving on
+                                           ordinary numbers in a note
   covered via DICOM tag stripping      -- device identifiers/serial
-                                           numbers, institution and
-                                           physician names, account/
-                                           certificate numbers, when
-                                           present as DICOM metadata
-  NOT covered (documented limitation,  -- biometric identifiers, full-
-  not silently ignored)                   face photographs (pixel-level
-                                           defacing of head/face imaging
-                                           is a V2 item), vehicle
-                                           identifiers, web URLs embedded
-                                           in scanned image content
+                                           numbers and institution/
+                                           physician names, when present
+                                           as DICOM metadata
+  explicitly NOT added, despite being  -- US_BANK_NUMBER, US_DRIVER_
+  auto-registered by a plain              LICENSE, US_PASSPORT. Read
+  AnalyzerEngine()                        their actual patterns: each
+                                           one's weakest/only pattern is
+                                           an unconstrained N-digit-number
+                                           match (US_BANK_NUMBER is
+                                           solely `\b[0-9]{8,17}\b` at
+                                           score 0.05; US_PASSPORT's weak
+                                           pattern is `\b[0-9]{9}\b` at
+                                           0.05; US_DRIVER_LICENSE's
+                                           weakest is
+                                           `\b([0-9]{6,14}|[0-9]{16})\b`
+                                           at 0.01). This module's
+                                           `default_score_threshold` is 0
+                                           (see `_get_analyzer`), so none
+                                           of these would be filtered by
+                                           confidence -- adding them would
+                                           very likely redact ordinary
+                                           clinical content (accession
+                                           numbers, reference values, any
+                                           bare multi-digit string) right
+                                           alongside a real bank account
+                                           or driver's license number. A
+                                           `LemmaContextAwareEnhancer` is
+                                           active by default and can
+                                           raise scores near a context
+                                           word ("bank", "account"), but
+                                           never lowers a non-matching
+                                           score below the pattern's own
+                                           floor -- it doesn't change this
+                                           conclusion at threshold 0.
+                                           Found by reading Presidio's own
+                                           source, not assumed.
+  NOT covered (documented limitation,  -- biometric identifiers -- not
+  not silently ignored)                   just "not done yet": genuinely
+                                           inapplicable to this project's
+                                           input modalities (a fingerprint
+                                           or voiceprint isn't text- or
+                                           DICOM-metadata-representable in
+                                           the way this pipeline consumes
+                                           documents). Full-face
+                                           photographs / pixel-level
+                                           DICOM defacing -- a genuinely
+                                           different technical domain
+                                           (computer vision, not NLP/
+                                           regex), disproportionate to
+                                           this MVP's scope, a V3+ item.
+                                           Vehicle license plates -- VINs
+                                           are covered (above), but plate
+                                           format varies too much across
+                                           US states/countries for a
+                                           reliable generic pattern
+                                           without serious false-positive
+                                           risk on short alphanumeric
+                                           strings -- a reasoned
+                                           exclusion, not a silent gap.
+                                           Web URLs embedded in scanned
+                                           image content -- an OCR gap
+                                           (pdfplumber doesn't OCR
+                                           image-only content), not a
+                                           redaction gap; see the Document
+                                           Parser's own dependency
+                                           decisions for why.
 
 spaCy model: en_core_web_sm, not _lg. ~15MB vs ~587MB, with correspondingly
 lower named-entity recall on unusual names -- acceptable for this MVP's
@@ -64,6 +141,7 @@ from collections import defaultdict
 from typing import Any
 
 from presidio_analyzer import AnalyzerEngine, Pattern, PatternRecognizer
+from presidio_analyzer.predefined_recognizers import UsMbiRecognizer
 from presidio_anonymizer import AnonymizerEngine
 
 from ..audit import audit_entry
@@ -115,6 +193,44 @@ _MRN_RECOGNIZER = PatternRecognizer(
     ],
 )
 
+# Same label-gated strategy as the MRN recognizer above -- HIPAA identifier
+# #10 (account numbers). Presidio's own US_BANK_NUMBER recognizer exists
+# but its only pattern is an unconstrained \b[0-9]{8,17}\b (score 0.05,
+# i.e. "any 8-17 digit number") -- at this module's default_score_threshold
+# of 0, that would redact ordinary clinical numbers (accession numbers,
+# reference values) right alongside a real account number. Requiring an
+# explicit label instead of leaning on a weak confidence score is the same
+# fix already proven for MRN.
+_ACCOUNT_NUMBER_RECOGNIZER = PatternRecognizer(
+    supported_entity="ACCOUNT_NUMBER",
+    patterns=[
+        Pattern(
+            name="account_number",
+            regex=r"\b(?:Account(?:\s?(?:No\.?|Number))?|Acct\.?)[:\s#]*[0-9-]{6,17}\b",
+            score=0.85,
+        )
+    ],
+)
+
+# HIPAA identifier #12 (vehicle identifiers) -- VIN half only, not license
+# plates (plate format varies too much across US states/countries for a
+# reliable generic pattern -- see the module docstring). The charset
+# excludes I/O/Q, per the real ISO 3779 VIN standard (those letters are
+# excluded specifically to avoid confusion with 1/0), which is real
+# structural precision, not just a label gate -- but the label is still
+# required too, for the same false-positive-avoidance reason as MRN and
+# ACCOUNT_NUMBER above.
+_VIN_RECOGNIZER = PatternRecognizer(
+    supported_entity="VEHICLE_IDENTIFICATION_NUMBER",
+    patterns=[
+        Pattern(
+            name="vin",
+            regex=r"\b(?:VIN|Vehicle\s+Identification\s+Number)[:\s#]*[A-HJ-NPR-Z0-9]{17}\b",
+            score=0.85,
+        )
+    ],
+)
+
 _ENTITIES = [
     "PERSON",
     "DATE_TIME",
@@ -125,6 +241,18 @@ _ENTITIES = [
     "URL",
     "IP_ADDRESS",
     "MEDICAL_RECORD_NUMBER",
+    # Already auto-registered by a plain AnalyzerEngine() -- just not
+    # previously requested. See the module docstring for why these three
+    # (real structural constraints, not a bare digit-count regex) and not
+    # US_BANK_NUMBER/US_DRIVER_LICENSE/US_PASSPORT (unconstrained N-digit
+    # matches -- a real over-redaction risk at this module's threshold).
+    "MEDICAL_LICENSE",
+    "US_ITIN",
+    # Not auto-registered -- explicitly added in _get_analyzer() below,
+    # same treatment as the custom recognizers.
+    "US_MBI",
+    "ACCOUNT_NUMBER",
+    "VEHICLE_IDENTIFICATION_NUMBER",
 ]
 
 _analyzer: AnalyzerEngine | None = None
@@ -133,11 +261,21 @@ _anonymizer = AnonymizerEngine()
 
 def _get_analyzer() -> AnalyzerEngine:
     """Lazily build the AnalyzerEngine -- loading the spaCy model has real
-    cost (spaCy) and shouldn't happen at import time or once per call."""
+    cost (spaCy) and shouldn't happen at import time or once per call.
+
+    default_score_threshold is left at its default of 0 (every match is
+    kept regardless of confidence) -- this is exactly why entity choice
+    above leans on real structural precision (a checksum, a constrained
+    digit-range, an explicit label) rather than a recognizer's own
+    confidence score to avoid false positives; see the module docstring.
+    """
     global _analyzer
     if _analyzer is None:
         analyzer = AnalyzerEngine()
         analyzer.registry.add_recognizer(_MRN_RECOGNIZER)
+        analyzer.registry.add_recognizer(_ACCOUNT_NUMBER_RECOGNIZER)
+        analyzer.registry.add_recognizer(_VIN_RECOGNIZER)
+        analyzer.registry.add_recognizer(UsMbiRecognizer())
         _analyzer = analyzer
     return _analyzer
 
@@ -146,7 +284,18 @@ def redact_text(text: str) -> tuple[str, dict[str, int]]:
     """Replace detected PII with `<ENTITY_TYPE>` placeholders. Returns the
     redacted text and a count of redactions per entity type -- counts only,
     never the original values, so this function's own return value can't
-    become a second place PHI leaks from."""
+    become a second place PHI leaks from.
+
+    Counts are built from `anonymized.items` (the anonymizer's own
+    conflict-resolved output), not the raw `results` list -- two
+    recognizers can match overlapping spans (e.g. US_ITIN's valid range
+    structurally overlaps US_SSN's shape-only pattern; nothing on the
+    SSN side excludes ITIN's 900+ prefix), and the anonymizer correctly
+    collapses that to one redaction. Counting from raw `results` would
+    silently inflate the audit log with a "phantom" second entity that
+    was never actually its own redaction, just a losing overlap
+    candidate -- found while adding US_ITIN, not hypothesized.
+    """
     if not text:
         return text, {}
 
@@ -154,8 +303,8 @@ def redact_text(text: str) -> tuple[str, dict[str, int]]:
     anonymized = _anonymizer.anonymize(text=text, analyzer_results=results)
 
     counts: dict[str, int] = defaultdict(int)
-    for result in results:
-        counts[result.entity_type] += 1
+    for item in anonymized.items:
+        counts[item.entity_type] += 1
     return anonymized.text, dict(counts)
 
 

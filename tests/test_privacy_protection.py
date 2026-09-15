@@ -80,6 +80,67 @@ def test_redacts_medical_record_number():
     assert counts.get("MEDICAL_RECORD_NUMBER", 0) == 1
 
 
+def test_redacts_medical_license_number():
+    # A DEA-certificate-shaped value: first letter in the DEA-valid set,
+    # and the checksum genuinely passes -- MedicalLicenseRecognizer
+    # validates via a real Luhn check, not just the regex shape.
+    redacted, counts = redact_text("Prescriber DEA number: AB1234563")
+    assert "AB1234563" not in redacted
+    assert counts.get("MEDICAL_LICENSE", 0) == 1
+
+
+def test_redacts_itin():
+    redacted, counts = redact_text("Taxpayer ITIN: 912-73-4567")
+    assert "912-73-4567" not in redacted
+    assert counts.get("US_ITIN", 0) == 1
+
+
+def test_itin_does_not_double_count_an_overlapping_ssn():
+    """Regression test: US_ITIN's valid range structurally overlaps
+    US_SSN's shape-only pattern (nothing on the SSN side excludes ITIN's
+    900+ prefix), so one ITIN-shaped value can match both recognizers.
+    The anonymizer correctly resolves the overlap to a single
+    redaction -- this test locks in that redact_text's *counts* reflect
+    that resolved reality (via anonymized.items) rather than the raw,
+    pre-conflict-resolution results list, which would silently inflate
+    the SSN count with a phantom second match that was never its own
+    redaction."""
+    text = "Taxpayer ITIN: 900-70-1234. Patient also has SSN: 234-56-7890 on file."
+    redacted, counts = redact_text(text)
+    assert "900-70-1234" not in redacted
+    assert "234-56-7890" not in redacted
+    assert counts.get("US_SSN", 0) == 1
+    assert counts.get("US_ITIN", 0) == 1
+
+
+def test_redacts_medicare_beneficiary_identifier():
+    redacted, counts = redact_text("MBI: 4EG9-TK2-XR56")
+    assert "4EG9-TK2-XR56" not in redacted
+    assert counts.get("US_MBI", 0) == 1
+
+
+def test_redacts_account_number():
+    redacted, counts = redact_text("Account #: 90012345678")
+    assert "90012345678" not in redacted
+    assert counts.get("ACCOUNT_NUMBER", 0) == 1
+
+
+def test_redacts_vehicle_identification_number():
+    redacted, counts = redact_text("VIN: 1HGCM82633A123456")
+    assert "1HGCM82633A123456" not in redacted
+    assert counts.get("VEHICLE_IDENTIFICATION_NUMBER", 0) == 1
+
+
+def test_realistic_lab_panel_text_passes_through_unredacted():
+    """The existing test_unrecognized_clinical_text_passes_through has no
+    digits in it at all, so it can't catch a false-positive regression
+    from any of the digit-heavy entities added above. This one targets
+    that specific risk surface directly."""
+    text = "Fasting glucose: 205 mg/dL, HbA1c: 8.0%, Total Cholesterol: 200 mg/dL, Reference Range 70-100"
+    redacted, _ = redact_text(text)
+    assert redacted == text
+
+
 def test_empty_text_returns_empty_with_no_counts():
     redacted, counts = redact_text("")
     assert redacted == ""
@@ -202,6 +263,8 @@ def test_no_planted_pii_survives_parser_and_privacy_together(tmp_path):
         "dob": "March 14, 1985",
         "ssn": "234-56-7890",  # not the canonical 123-45-6789 -- see test_redacts_ssn
         "mrn_value": "4471829",
+        "account_value": "90012345678",
+        "vin_value": "1HGCM82633A123456",
     }
 
     path = tmp_path / "fake_patient.pdf"
@@ -210,7 +273,9 @@ def test_no_planted_pii_survives_parser_and_privacy_together(tmp_path):
     c.drawString(72, 730, f"DOB: {planted['dob']}")
     c.drawString(72, 710, f"SSN: {planted['ssn']}")
     c.drawString(72, 690, f"MRN: {planted['mrn_value']}")
-    c.drawString(72, 670, "History: Patient has T2DM and HTN.")
+    c.drawString(72, 670, f"Account #: {planted['account_value']}")
+    c.drawString(72, 650, f"VIN: {planted['vin_value']}")
+    c.drawString(72, 630, "History: Patient has T2DM and HTN.")
     c.save()
 
     parser_state = _base_state(raw_input_paths=[str(path)])

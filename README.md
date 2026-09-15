@@ -56,15 +56,34 @@ routing" under Design decisions below.
 
 **Phases 0-9 done -- MVP complete**, plus four post-MVP fixes found by
 live-testing the running app and by deliberately expanding validation
-past the original nine cases, and two post-MVP V2 enhancements (real
-MeSH-based concept matching for RAG, and real case persistence, both
-below) closing gaps the project's own architecture critique and its own
-"Known limitations" section named from the start. All six agents, wired
-into one pipeline, with a working UI, validated across a spread of
-synthetic cases. 144 automated tests passing, plus two things pytest
-can't check by itself: a live OpenRouter call (Phase 5) and full manual
-runs of the UI in a real browser (Phase 8, revisited below) -- see both
-below.
+past the original nine cases, and three post-MVP V2 enhancements (real
+MeSH-based concept matching for RAG, real case persistence, and
+broadened PII coverage, all below) closing gaps the project's own
+architecture critique and its own "Known limitations" section named
+from the start. All six agents, wired into one pipeline, with a working
+UI, validated across a spread of synthetic cases. 151 automated tests
+passing, plus two things pytest can't check by itself: a live
+OpenRouter call (Phase 5) and full manual runs of the UI in a real
+browser (Phase 8, revisited below) -- see both below.
+
+**PII coverage V2: 12 of 18 HIPAA Safe Harbor categories, up from 8 --
+via entities Presidio already ships but this project wasn't requesting,
+not new detection logic.** Three Presidio-native entities with real
+structural precision (`MEDICAL_LICENSE`'s Luhn checksum, `US_ITIN`'s
+IRS-specific digit ranges, `US_MBI`'s fixed Medicare-ID format) plus two
+new custom label-gated recognizers (account numbers, vehicle
+identification numbers) following the same false-positive-avoidance
+strategy already proven for the medical-record-number pattern.
+Deliberately *not* added: `US_BANK_NUMBER`/`US_DRIVER_LICENSE`/
+`US_PASSPORT` -- their only patterns are unconstrained N-digit-number
+matches, a real over-redaction risk at this agent's threshold-0
+scoring, found by reading Presidio's own source rather than assumed.
+This pass also found and fixed a real (if previously unreachable) bug:
+`US_ITIN` structurally overlaps `US_SSN`'s pattern, which was silently
+inflating the audit log's redaction counts -- see Design decisions.
+Verified against this project's own realistic lab-value text with zero
+false positives. 7 new tests, zero changes needed to any other agent's
+tests.
 
 **RAG V2: patient data now matches literature via real MeSH concept
 IDs, not just embedding similarity.** The original architecture
@@ -286,11 +305,14 @@ shouldn't have to read thirty bullet points to find the honest gaps:
   public dataset, by design, and says so in the report -- see why under
   Design decisions. Explaining an actual case is the citation-grounded
   narrative's job, not SHAP's, in this design.
-- **PII redaction covers 8 of the 18 HIPAA Safe Harbor identifier
+- **PII redaction covers 12 of the 18 HIPAA Safe Harbor identifier
   categories** (names, dates, phone/fax, email, geographic subdivisions,
-  SSNs, URLs, IPs, plus a custom medical-record-number pattern) via
+  SSNs, URLs, IPs, ITINs, and -- newly -- health plan beneficiary numbers
+  via Medicare Beneficiary IDs, account numbers, and medical
+  license/DEA certificate numbers, plus custom label-gated patterns for
+  medical record numbers and vehicle identification numbers) via
   Presidio + spaCy. Biometric identifiers, full-face photographs
-  (pixel-level DICOM defacing), and vehicle identifiers are not
+  (pixel-level DICOM defacing), and vehicle license plates are not
   addressed -- listed explicitly in `privacy_protection.py`, not implied
   away.
 - **Case persistence is one local SQLite file, not a real database
@@ -375,12 +397,39 @@ shouldn't have to read thirty bullet points to find the honest gaps:
   full reasoning.
 - **"HIPAA compliance" and "differential privacy" are gone from this
   agent's naming**, replaced with what it actually does: NER-based
-  redaction (Presidio + spaCy) for 8 of the 18 HIPAA Safe Harbor
-  identifiers, a custom pattern recognizer for medical record numbers, and
+  redaction (Presidio + spaCy) for 12 of the 18 HIPAA Safe Harbor
+  identifiers, three custom label-gated pattern recognizers (medical
+  record numbers, account numbers, vehicle identification numbers), and
   DICOM tag stripping for device/institution identifiers. Coverage gaps
-  (biometrics, face photos, vehicle identifiers) are listed explicitly in
-  the module docstring rather than implied away by a blanket "compliant"
-  claim -- per the privacy critique.
+  (biometrics, face photos, vehicle license plates) are listed explicitly
+  in the module docstring rather than implied away by a blanket
+  "compliant" claim -- per the privacy critique.
+- **Broadening PII coverage meant reading Presidio's own recognizer
+  source, not just adding every entity name it ships.** Several of
+  Presidio's US-specific recognizers (`US_BANK_NUMBER`,
+  `US_DRIVER_LICENSE`, `US_PASSPORT`) turned out to have no real
+  structural pattern at all -- e.g. `US_BANK_NUMBER`'s only pattern is
+  `\b[0-9]{8,17}\b`, "any 8-17 digit number." Since this agent's
+  `default_score_threshold` is 0 (every match is kept regardless of
+  confidence), adding those would have redacted ordinary clinical
+  numbers -- accession numbers, reference ranges -- right alongside a
+  real account or license number. Added instead: three entities with
+  genuine structural constraints (`MEDICAL_LICENSE`'s Luhn checksum,
+  `US_ITIN`'s IRS-specific digit ranges, `US_MBI`'s fixed-format
+  Medicare Beneficiary ID), plus two new custom recognizers following
+  the existing MRN pattern's own fix for the same problem: require an
+  explicit label (`Account #:`, `VIN:`) instead of trusting a weak
+  confidence score. Verified empirically, not assumed: all five run
+  clean against this project's own realistic lab-value text with zero
+  false positives (`test_realistic_lab_panel_text_passes_through_
+  unredacted`). This same pass also found and fixed a real (if
+  previously unreachable) bug: `US_ITIN`'s valid range structurally
+  overlaps `US_SSN`'s shape-only pattern, and `redact_text`'s count-
+  building loop was iterating the raw, pre-conflict-resolution match
+  list -- meaning one redacted span could silently inflate the audit
+  log with a phantom second entity type. Fixed by counting from the
+  anonymizer's own resolved `items` instead; see
+  `test_itin_does_not_double_count_an_overlapping_ssn`.
 - **spaCy model: `en_core_web_sm`, not `_lg`.** ~15MB vs ~587MB, lower
   NER recall on unusual names -- fine for this MVP's synthetic test
   corpus, not a claim about production-grade recall on messy real text.
