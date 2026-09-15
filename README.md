@@ -368,9 +368,24 @@ shouldn't have to read thirty bullet points to find the honest gaps:
   not a production-grade reliability story. Concretely observed, not
   hypothesized: a request with a synthetic brain-MRI-shaped image got
   back a bare content-safety verdict instead of an answer, twice in a
-  row. Retried automatically now (see Design decisions), but whether the
-  underlying model can meaningfully interpret real medical imagery at
-  all -- safety-filtering aside -- has not been verified either way.
+  row. Retried automatically now (see Design decisions).
+- **Tested once against a real, non-synthetic image -- and the model's
+  specific reads of it were not trustworthy.** A real, CC-BY-4.0
+  pediatric chest X-ray labeled PNEUMONIA (Hugging Face
+  `hf-vision/chest-xray-pneumonia`, test split, row 300) was DICOM-wrapped
+  and run through the live app. The model never put pneumonia in its
+  differential. Its top entry was congenital heart disease, built around
+  a "central venous line" and "cardiomegaly" it reported seeing --
+  the image does have a genuine line-like artifact crossing the chest
+  (most likely an external ECG lead, not a catheter), but the cardiomegaly
+  call doesn't hold up on visual inspection of the same image. To its
+  credit, it correctly identified the image as a pediatric chest
+  radiograph and flagged the whole result at 0.15 confidence with
+  "clinical correlation is absolutely essential" -- so it isn't inventing
+  answers from nothing, but a real, specific-sounding finding in its
+  output is not evidence that finding is actually in the image. One
+  image, one run -- not a systematic evaluation, just the first honest
+  data point after multiple synthetic-only tests.
 - **No formal clinical validation** -- no accuracy, sensitivity, or
   specificity metrics against a labeled dataset, and none are claimed.
   This is a portfolio demonstration of an architecture, not a validated
@@ -634,8 +649,9 @@ shouldn't have to read thirty bullet points to find the honest gaps:
   response_then_succeeds` and `test_call_openrouter_gives_up_after_
   repeated_malformed_responses` in `tests/test_diagnostic_prediction.py`.
   Whether the underlying model can meaningfully interpret real medical
-  imagery at all, safety-filtering aside, remains unverified -- see
-  Known Limitations.
+  imagery has since been tested live, once, against a real labeled chest
+  X-ray -- it engaged with the actual pixels rather than refusing, but
+  its specific findings didn't hold up; see Known Limitations.
 - **The whole graph is tested end to end, offline.** `test_pipeline_runs_
   all_six_stages_with_audit_log_accumulating` builds a real synthetic PDF,
   runs it through the real compiled `StateGraph` (all six real agents,
