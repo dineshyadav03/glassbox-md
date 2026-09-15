@@ -17,7 +17,21 @@ out of view once the trace fills the screen.
 Clinician confirmation: the final report always ships with a
 "Confirm reviewed" action and nothing else. No agent sets
 `clinician_confirmed` itself (see `explainability.py`) -- only a person
-clicking this button does.
+clicking this button does. It's durable now, not just a chat message:
+confirming calls `case_store.confirm_case`, which records a real
+timestamp in `data/cases/cases.db` and is what a reopened past case's
+`clinician_confirmed` flag actually reflects.
+
+Case persistence + browse: every completed case is saved via
+`case_store.save_case` right where its report is first shown (only the
+already-redacted report/prediction/audit-log, never raw or
+pre-anonymization fields -- see case_store.py's own docstring for the
+full allow-list and why). `on_chat_start` now offers a choice --
+upload a new case, or browse recent past cases -- before falling
+through to the existing upload flow. Both the live and the
+reopened-past-case path render through the same `_build_report_markdown`
+so there's exactly one place that knows how to format a report, not two
+copies that can drift.
 
 UI polish pass: the differential renders as an actual Markdown table
 (condition, likelihood, evidence), read directly from
@@ -35,6 +49,7 @@ actually means in this pipeline.
 
 from __future__ import annotations
 
+import asyncio
 import sys
 from pathlib import Path
 from typing import Any
@@ -44,7 +59,9 @@ sys.path.insert(0, str(Path(__file__).parent / "src"))
 import chainlit as cl
 from dotenv import load_dotenv
 
+from glassbox_md import case_store
 from glassbox_md.agents.diagnostic_prediction import CONFIDENCE_THRESHOLD
+from glassbox_md.case_store import CaseRecord
 from glassbox_md.disclaimer import INTENDED_USE_DISCLAIMER
 from glassbox_md.pipeline import build_pipeline_graph
 from glassbox_md.state import new_stage_status
@@ -101,6 +118,74 @@ def _new_state(paths: list[str]) -> dict[str, Any]:
 async def start() -> None:
     await cl.Message(content=INTENDED_USE_DISCLAIMER, author="System").send()
 
+    choice = await cl.AskActionMessage(
+        content="Start a new case, or look at a past one?",
+        actions=[
+            cl.Action(name="upload_new", payload={}, label="📤 Upload a new case"),
+            cl.Action(name="view_past", payload={}, label="📋 Browse past cases"),
+        ],
+        timeout=90,
+    ).send()
+
+    # None on timeout (raise_on_timeout defaults to False) -- treated the
+    # same as explicitly choosing to upload, not as an error.
+    if choice and choice["name"] == "view_past":
+        opened = await _browse_past_cases()
+        if opened:
+            return
+
+    await _start_new_case_upload()
+
+
+async def _browse_past_cases() -> bool:
+    """Offer recent cases to reopen. Returns True if one was actually
+    opened (caller should stop there), False to fall through to the
+    upload flow (empty store, timeout, or the explicit "start new"
+    escape hatch)."""
+    cases = await asyncio.to_thread(case_store.list_recent_cases, 20)
+    if not cases:
+        await cl.Message(content="No past cases yet -- upload one to get started.").send()
+        return False
+
+    actions = [
+        cl.Action(
+            name="select_case",
+            payload={"case_id": case["case_id"]},
+            label=_case_summary_label(case),
+        )
+        for case in cases
+    ]
+    actions.append(
+        cl.Action(name="select_case", payload={"case_id": None}, label="Start a new case instead")
+    )
+
+    picked = await cl.AskActionMessage(
+        content="Recent cases (newest first):", actions=actions, timeout=90
+    ).send()
+
+    if not picked or picked["payload"].get("case_id") is None:
+        return False
+
+    case = await asyncio.to_thread(case_store.get_case, picked["payload"]["case_id"])
+    if case is None:
+        await cl.Message(content="That case no longer exists -- starting a new one instead.").send()
+        return False
+
+    await _render_case(case)
+    return True
+
+
+def _case_summary_label(case: CaseRecord) -> str:
+    report = case["final_explainable_report"]
+    prediction = case["diagnostic_prediction_result"]
+    differential = prediction.get("differential") or []
+    top = max(differential, key=lambda c: c["likelihood"])["condition"] if differential else "no differential"
+    confirmed_marker = "✅" if case["confirmed"] else "⬜"
+    when = case["created_at"][:16].replace("T", " ")  # YYYY-MM-DD HH:MM, no seconds/offset
+    return f"{confirmed_marker} {when} -- {top} ({report['confidence']:.2f})"
+
+
+async def _start_new_case_upload() -> None:
     files = await cl.AskFileMessage(
         content=(
             "Upload one or more patient documents to run through the pipeline: "
@@ -156,7 +241,19 @@ async def run_pipeline(paths: list[str]) -> None:
         await cl.Message(content=f"Pipeline crashed unexpectedly: {exc}").send()
         return
 
-    await _render_final_report(state)
+    report = state.get("final_explainable_report")
+    if not report:
+        await cl.Message(
+            content=(
+                "Pipeline stopped before producing a report -- check the failed step "
+                "above for why. No output is available to review."
+            )
+        ).send()
+        return
+
+    case_id = await asyncio.to_thread(case_store.save_case, state)
+    cl.user_session.set("case_id", case_id)
+    await _render_report(report, state.get("diagnostic_prediction_result") or {}, confirmed=False)
 
 
 async def _render_stage_step(stage_name: str, update: dict[str, Any]) -> None:
@@ -174,18 +271,10 @@ async def _render_stage_step(stage_name: str, update: dict[str, Any]) -> None:
         step.output = output
 
 
-async def _render_final_report(state: dict[str, Any]) -> None:
-    report = state.get("final_explainable_report")
-    if not report:
-        await cl.Message(
-            content=(
-                "Pipeline stopped before producing a report -- check the failed step "
-                "above for why. No output is available to review."
-            )
-        ).send()
-        return
-
-    prediction = state.get("diagnostic_prediction_result") or {}
+def _build_report_markdown(report: dict[str, Any], prediction: dict[str, Any]) -> str:
+    """Pure formatting -- no `cl` calls -- so both a freshly-completed
+    pipeline run and a reopened past case (see case_store.py) render
+    through this exact same logic instead of two copies that can drift."""
     lines: list[str] = []
 
     if prediction.get("abstained") and not prediction.get("differential"):
@@ -233,12 +322,33 @@ async def _render_final_report(state: dict[str, Any]) -> None:
             "differential. Treat as inconclusive, not a settled result."
         )
 
-    await cl.Message(
-        content="\n".join(lines),
-        actions=[
-            cl.Action(name="confirm_reviewed", payload={}, label="✅ Confirm reviewed by clinician")
-        ],
-    ).send()
+    return "\n".join(lines)
+
+
+async def _render_report(report: dict[str, Any], prediction: dict[str, Any], *, confirmed: bool) -> None:
+    """Send the report, with the right action: a live Confirm button for
+    an unconfirmed case, or a static notice for one that's already
+    confirmed -- confirmation is one immutable fact, not a re-clickable
+    toggle (see case_store.confirm_case's idempotency for the DB-level
+    half of that same rule)."""
+    content = _build_report_markdown(report, prediction)
+    if confirmed:
+        await cl.Message(content=content).send()
+        await cl.Message(content="✅ Already confirmed reviewed by clinician.").send()
+    else:
+        await cl.Message(
+            content=content,
+            actions=[
+                cl.Action(name="confirm_reviewed", payload={}, label="✅ Confirm reviewed by clinician")
+            ],
+        ).send()
+
+
+async def _render_case(case: CaseRecord) -> None:
+    cl.user_session.set("case_id", case["case_id"])
+    await _render_report(
+        case["final_explainable_report"], case["diagnostic_prediction_result"], confirmed=case["confirmed"]
+    )
 
 
 @cl.action_callback("confirm_reviewed")
@@ -246,8 +356,25 @@ async def on_confirm_reviewed(action: cl.Action) -> None:
     """The only place `clinician_confirmed` becomes true in spirit -- no
     agent sets it in the pipeline itself (see explainability.py); this
     is the human action the report exists to require before anything is
-    treated as final."""
+    treated as final. Durable now: `case_store.confirm_case` records a
+    real timestamp in `data/cases/cases.db`, not just a chat message that
+    vanishes with the session."""
+    case_id = cl.user_session.get("case_id")
+    if not case_id:
+        await cl.Message(
+            content="Could not find this case to confirm -- try reopening it from Browse past cases."
+        ).send()
+        await action.remove()
+        return
+
+    confirmed_at = await asyncio.to_thread(case_store.confirm_case, case_id)
+    if confirmed_at is None:
+        await cl.Message(content="This case no longer exists in the case store.").send()
+        await action.remove()
+        return
+
     await cl.Message(
-        content="Confirmed: a clinician has reviewed this report.\n\n" + INTENDED_USE_DISCLAIMER
+        content=f"Confirmed: a clinician has reviewed this report (recorded {confirmed_at}).\n\n"
+        + INTENDED_USE_DISCLAIMER
     ).send()
     await action.remove()

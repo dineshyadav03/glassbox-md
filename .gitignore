@@ -16,10 +16,12 @@ data/imaging/*
 data/tabular/*
 data/literature/*
 data/synthetic_patients/*
+data/cases/*
 !data/imaging/.gitkeep
 !data/tabular/.gitkeep
 !data/literature/.gitkeep
 !data/synthetic_patients/.gitkeep
+!data/cases/.gitkeep
 !data/README.md
 
 # Chroma persistence

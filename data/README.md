@@ -30,3 +30,11 @@ lab values) for testing the Privacy Protection agent's redaction. Because
 you control the ground truth, you can verify the agent actually caught
 every planted identifier. Never put a real document here, de-identified
 or not.
+
+## `cases/`
+`cases.db`, a local SQLite file holding every completed case's final
+report and clinician-confirmation status (see `case_store.py`).
+Populated by the running app, not by hand. Only the already-redacted
+report/prediction/audit-log ever lands here -- never raw uploads or
+pre-anonymization data; see `case_store.py`'s module docstring for the
+exact allow-list.

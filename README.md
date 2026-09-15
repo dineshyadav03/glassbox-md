@@ -56,14 +56,15 @@ routing" under Design decisions below.
 
 **Phases 0-9 done -- MVP complete**, plus four post-MVP fixes found by
 live-testing the running app and by deliberately expanding validation
-past the original nine cases, and one post-MVP V2 enhancement (real
-MeSH-based concept matching for RAG, see below) closing a gap the
-project's own architecture critique named from the start. All six
-agents, wired into one pipeline, with a working UI, validated across a
-spread of synthetic cases. 130 automated tests passing, plus two things
-pytest can't check by itself: a live OpenRouter call (Phase 5) and full
-manual runs of the UI in a real browser (Phase 8, revisited below) --
-see both below.
+past the original nine cases, and two post-MVP V2 enhancements (real
+MeSH-based concept matching for RAG, and real case persistence, both
+below) closing gaps the project's own architecture critique and its own
+"Known limitations" section named from the start. All six agents, wired
+into one pipeline, with a working UI, validated across a spread of
+synthetic cases. 144 automated tests passing, plus two things pytest
+can't check by itself: a live OpenRouter call (Phase 5) and full manual
+runs of the UI in a real browser (Phase 8, revisited below) -- see both
+below.
 
 **RAG V2: patient data now matches literature via real MeSH concept
 IDs, not just embedding similarity.** The original architecture
@@ -84,6 +85,25 @@ zero changes needed to the ~20 pre-existing RAG-adjacent tests, since
 their fixture data has no MeSH metadata and so exercises the same
 fallback path the old flat search always did. See Design decisions
 below for the full story.
+
+**Case persistence V2: "Confirm reviewed by clinician" now means
+something durable, and past cases are browsable in-app.**
+`case_store.py` (stdlib `sqlite3`, zero new dependency) saves every
+completed case's report the moment it's produced, and records a real
+timestamp -- idempotently, see Design decisions -- when a clinician
+confirms it. `on_chat_start` now offers a choice up front: upload a new
+case, or browse and reopen recent ones. `ExplainableReport.
+clinician_confirmed`, a field that has existed in the state schema
+since Phase 0 but that nothing ever set, is finally real. Only the
+already-redacted report/prediction/audit-log is ever persisted --
+never raw uploads or pre-anonymization data (`save_case` calls
+`assert_privacy_boundary_respected` before writing anything, a guard
+that previously had exactly one production call site). 14 new tests
+(`test_case_store.py`); zero changes to any existing test file.
+Live-verified beyond pytest: a real case was uploaded, confirmed with a
+real recorded timestamp, and reopened from a *separate* chat session
+via Browse past cases, rendering identically and showing the
+confirmation notice instead of a re-clickable button.
 
 Run it: `chainlit run app.py -w`, then open the local URL it prints.
 
@@ -273,9 +293,13 @@ shouldn't have to read thirty bullet points to find the honest gaps:
   (pixel-level DICOM defacing), and vehicle identifiers are not
   addressed -- listed explicitly in `privacy_protection.py`, not implied
   away.
-- **No case-persistence layer.** Each chat session is one ephemeral run;
-  "Confirm reviewed by clinician" sends a message and nothing else --
-  there's no stored record for it to update yet.
+- **Case persistence is one local SQLite file, not a real database
+  service.** `case_store.py` gives "Confirm reviewed by clinician" a
+  real, durable record (see Status/Design decisions below) -- but it's
+  a single file, adequate for this MVP's local single-user demo, not a
+  concurrent-multi-writer store. A real deployment would need a
+  client-server database, the same class of explicit scale cap as the
+  RAG agent's linear concept-matching scan.
 - **Up to `MAX_IMAGES_PER_CALL` (4) images reach the model per case.**
   Fixed after `test_case_multiple_dicom_files_all_reach_the_model` (Phase
   9) found the opposite: an earlier version only ever attached the first
@@ -413,6 +437,31 @@ shouldn't have to read thirty bullet points to find the honest gaps:
   tests across `test_validation.py`/`test_pipeline.py` needed zero
   changes -- their fixture abstracts simply have no MeSH metadata, so
   they exercise the same fallback path unchanged.
+- **Case persistence: stdlib SQLite, a fresh connection per call, and an
+  idempotent confirm.** `case_store.py` adds zero new dependencies
+  (`sqlite3` is stdlib) -- the same "reuse what's already there" call
+  made for pdfplumber, raw E-utilities, and MeSH-over-UMLS. No
+  connection is cached at module scope: `_default_collection()` in
+  `medical_knowledge_rag.py` already established the same
+  open-per-call pattern, for the same reason -- a cached connection
+  would bind to whichever thread first imported the module and raise on
+  a call from another, and every `case_store` call from `app.py` is
+  wrapped in `asyncio.to_thread(...)` (the exact class of blocking
+  concern the `astream()` fix already documented, applied defensively
+  here even though a sqlite write is milliseconds, not the 60-180s LLM
+  call). `confirm_case` is intentionally idempotent (`confirmed_at =
+  COALESCE(confirmed_at, ?)`): a double-click, two sessions, or
+  reopening an already-confirmed case can never overwrite the true first
+  confirmation time -- confirmation is one immutable audit fact, which
+  is also why the UI hides the clickable action entirely once a case is
+  confirmed rather than leaving it re-clickable. `save_case` calls
+  `assert_privacy_boundary_respected` before opening a database
+  connection at all -- fail-closed, not a partial write rolled back --
+  and only ever persists `final_explainable_report`,
+  `diagnostic_prediction_result`, and `audit_log`; every `audit_entry()`
+  summary across all six agents was checked and is a count/category
+  string, never raw content, before deciding that field was safe to
+  include.
 - **Diagnostic Prediction Agent output is a ranked differential, never
   "the diagnosis."** `DifferentialCondition` entries carry a likelihood
   and evidence citations, not a single verdict, per the clinical-safety
