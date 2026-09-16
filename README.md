@@ -848,3 +848,7 @@ shouldn't have to read thirty bullet points to find the honest gaps:
   image_not_just_the_first`, `test_agent_caps_images_at_max_and_notes_
   the_drop_in_the_audit_log` in `tests/test_diagnostic_prediction.py`)
   and the full-pipeline level (`tests/test_validation.py`).
+
+## License
+
+GPL-3.0 -- see [`LICENSE`](LICENSE).
