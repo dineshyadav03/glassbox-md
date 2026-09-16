@@ -20,8 +20,15 @@ python -m venv .venv
 pip install -r requirements.txt
 pip install -e .
 copy .env.example .env        # then fill in your API key(s)
+git config core.hooksPath .githooks
 pytest
 ```
+
+That `core.hooksPath` line enables a pre-commit hook
+(`.githooks/pre-commit`) that refuses to commit `.env` even if it's
+force-added -- `.env` holds real API keys and must never enter version
+control. `.gitignore` already keeps it out of a normal `git add`; the
+hook is the backstop for the explicit-force case.
 
 See the README's [Setup](README.md#setup) section for the literature
 index build step (needed for the RAG agent) and how to run the Chainlit

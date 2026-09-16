@@ -1,0 +1,19 @@
+#!/bin/sh
+# Blocks committing .env (or any nested .env file) even if someone force-adds
+# it past .gitignore with `git add -f`. .gitignore keeps it out of `git add .`
+# by default; this hook is the backstop for the explicit-force case.
+#
+# One-time setup per clone: git config core.hooksPath .githooks
+
+staged_env_files=$(git diff --cached --name-only --diff-filter=ACM | grep -E '(^|/)\.env$')
+
+if [ -n "$staged_env_files" ]; then
+    echo "ERROR: refusing to commit .env file(s):"
+    echo "$staged_env_files" | sed 's/^/  /'
+    echo ""
+    echo "This project's .env holds real API keys and must never be committed."
+    echo "Unstage it with: git restore --staged <file>"
+    exit 1
+fi
+
+exit 0
