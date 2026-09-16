@@ -1,5 +1,7 @@
 # Glassbox MD
 
+[![GitHub repo](https://img.shields.io/badge/GitHub-dineshyadav03%2Fglassbox--md-181717?logo=github)](https://github.com/dineshyadav03/glassbox-md)
+
 An explainable medical AI agent pipeline: six agents that turn imaging,
 labs, and symptoms into a ranked differential a clinician can actually
 audit, not just trust.
