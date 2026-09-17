@@ -113,10 +113,12 @@ IDs, not just embedding similarity.** The original architecture
 critique recommended a 3-tier patient -> literature -> UMLS graph for
 real citation traceability; this project has no UMLS/UTS license, so it
 uses PubMed's own real MeSH indexing instead -- public, free, and
-already present in every PubMed record this project fetches. Covers the
+already present in every PubMed record this project fetches. Covered the
 same 6 canonical clinical terms `data_preparation.py`'s
-`TERMINOLOGY_MAP` already normalizes to; falls back to the old flat
-similarity search for anything outside that vocabulary. Verified live,
+`TERMINOLOGY_MAP` normalized to at this feature's original launch --
+now 8, after Condition coverage V2 above added chronic kidney disease
+and hypothyroidism; falls back to the old flat similarity search for
+anything outside that vocabulary. Verified live,
 not just in pytest: all 6 MeSH Descriptor IDs were resolved against real
 NCBI data during development (not typed from memory), a real
 50-abstracts-per-condition index was rebuilt from live PubMed, and a
