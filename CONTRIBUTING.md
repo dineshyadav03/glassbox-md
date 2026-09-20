@@ -17,12 +17,16 @@ too. Use synthetic or de-identified data only, always.
 ```bash
 python -m venv .venv
 .venv\Scripts\activate        # Windows
-pip install -r requirements.txt
+pip install -r requirements.lock.txt   # exact tested versions (or requirements.txt for newest)
+python -m spacy download en_core_web_lg   # ~587MB; the PII agent needs it
 pip install -e .
 copy .env.example .env        # then fill in your API key(s)
 git config core.hooksPath .githooks
 pytest
 ```
+
+If you change `requirements.txt`, regenerate the lock file with the
+`uv pip compile` command in that file's header and commit both.
 
 That `core.hooksPath` line enables a pre-commit hook
 (`.githooks/pre-commit`) that refuses to commit `.env` even if it's
@@ -37,7 +41,17 @@ UI locally.
 ## Before opening a pull request
 
 - **Run the test suite**: `pytest`. All tests should pass; add new ones
-  for new behavior rather than only checking it manually.
+  for new behavior rather than only checking it manually. CI runs the
+  same suite on Python 3.11 and 3.13, against both `requirements.txt` and
+  the lock file, so a failure there is usually a real one.
+- **Test the false-positive side of any PII pattern, not just the hit.**
+  The privacy recognizers run at threshold 0, so an over-broad pattern
+  redacts ordinary clinical text. Every label-gated recognizer has a
+  negative corpus in `tests/test_privacy_protection.py` (realistic text
+  that must come out byte-identical); add to it when you add or loosen a
+  pattern. Independent review of the last round of patterns found a
+  false positive ("UDI-6/IIQ-7", a urogynecology questionnaire read as a
+  device serial) that the author's own tests missed.
 - **Keep the six-agent boundary intact.** Each agent
   (`src/glassbox_md/agents/`) has one job and communicates only through
   `MedicalPipelineState`. If a change needs to reach across agents, that's

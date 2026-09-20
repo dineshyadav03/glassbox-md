@@ -1,6 +1,7 @@
 # Glassbox MD
 
 [![GitHub repo](https://img.shields.io/badge/GitHub-dineshyadav03%2Fglassbox--md-181717?logo=github)](https://github.com/dineshyadav03/glassbox-md)
+[![CI](https://github.com/dineshyadav03/glassbox-md/actions/workflows/ci.yml/badge.svg)](https://github.com/dineshyadav03/glassbox-md/actions/workflows/ci.yml)
 
 An explainable medical AI agent pipeline: six agents that turn imaging,
 labs, and symptoms into a ranked differential a clinician can actually
@@ -64,9 +65,42 @@ PII coverage, and expanding from 2 to 6 target conditions, all below)
 closing gaps the project's own architecture critique and its own "Known
 limitations" section named from the start. All six agents, wired into
 one pipeline, with a working UI, validated across a spread of synthetic
-cases. 154 automated tests passing, plus two things pytest can't check
-by itself: a live OpenRouter call (Phase 5) and full manual runs of the
-UI in a real browser (Phase 8, revisited below) -- see both below.
+cases. 384 automated tests passing (run on every push by CI, on Python
+3.11 and 3.13), plus two things pytest can't check by itself: a live
+OpenRouter call (Phase 5) and full manual runs of the UI in a real browser
+(Phase 8, revisited below) -- see both below.
+
+**Hardening pass: CI, a reproducible lock file, a measured imaging
+evaluation, and a round of bugs that independent review found in the
+new code.** Infrastructure: GitHub Actions runs the full suite on Python
+3.11 and 3.13 against both `requirements.txt` and the new exact-pin
+`requirements.lock.txt` (verified by building a brand-new environment
+from it), a weekly `pip-audit` workflow covers the lock file, and
+Dependabot is configured. The audit found a real advisory set in
+`cryptography` (now floored at 50, fixed upstream) and undeclared use of
+Pillow (now declared). Setting up CI also exposed a wrong claim that had
+survived from Phase 3: the docs said the PII agent uses `en_core_web_sm`,
+but Presidio's default engine loads `_lg` -- the tests only passed
+because Presidio silently downloads a missing model, and a pip-less
+environment crashed with `SystemExit`. It now fails fast with the
+install command. Evaluation: `scripts/eval_imaging.py` turns the earlier
+n=4 anecdote into a seeded, resumable, offline-testable measurement (see
+Known limitations for the result: top-1 right about a third of the time,
+confidence uninformative). Running it for real found two more
+retry gaps in the OpenRouter call and made the harness record which
+model actually served each request. PII: free-text device serial/UDI and
+license-plate recognizers were added, and the coverage claim was rewritten
+because "12 of 18" did not hold under any single counting rule. The
+process point worth recording: each of the two new pieces of code
+(recognizers, eval harness) was written by one agent and then attacked by
+a separate reviewer told to break it, and both reviews returned "needs
+changes" with reproductions the authors' own tests (92 and 84 of them)
+had missed -- a
+questionnaire ("UDI-6/IIQ-7") redacted as a device serial, non-breaking
+spaces that let a serial through unredacted, UDIs redacted only through
+their first group, negation that scored "No pleural effusion,
+pneumothorax, or pneumonia" as a pneumonia call. All fixed and turned into
+regression tests.
 
 **Condition coverage V2: 2 -> 6 target conditions, and a real finding
 that reframed what "scoped to N conditions" even means.** Research
@@ -89,14 +123,17 @@ plain-English name, same situation as hyperlipidemia's real heading
 being the pluralized "Hyperlipidemias." 3 new tests, zero changes
 needed to any other agent's tests. See Design decisions below.
 
-**PII coverage V2: 12 of 18 HIPAA Safe Harbor categories, up from 8 --
-via entities Presidio already ships but this project wasn't requesting,
-not new detection logic.** Three Presidio-native entities with real
-structural precision (`MEDICAL_LICENSE`'s Luhn checksum, `US_ITIN`'s
-IRS-specific digit ranges, `US_MBI`'s fixed Medicare-ID format) plus two
-new custom label-gated recognizers (account numbers, vehicle
-identification numbers) following the same false-positive-avoidance
-strategy already proven for the medical-record-number pattern.
+**PII coverage V2: five more detectors -- three from entities Presidio
+already ships but this project wasn't requesting, two custom.** Three
+Presidio-native entities with real structural precision
+(`MEDICAL_LICENSE`'s Luhn checksum, `US_ITIN`'s IRS-specific digit
+ranges, `US_MBI`'s fixed Medicare-ID format) plus two new custom
+label-gated recognizers (account numbers, vehicle identification
+numbers) following the same false-positive-avoidance strategy already
+proven for the medical-record-number pattern. This entry was originally
+headlined "12 of 18 categories, up from 8"; that count doesn't hold
+under a consistent rule and was replaced by a per-category statement
+(see Known limitations and the hardening pass above).
 Deliberately *not* added: `US_BANK_NUMBER`/`US_DRIVER_LICENSE`/
 `US_PASSPORT` -- their only patterns are unconstrained N-digit-number
 matches, a real over-redaction risk at this agent's threshold-0
@@ -239,13 +276,21 @@ healthcare/
 ├── .chainlit/config.toml           name, file-upload limits, custom_css wiring
 ├── public/banner.css               the persistent disclaimer banner (pure CSS, no JS)
 ├── docs/
-│   └── reference-images/     the 11 original pitch screenshots this project is built from
+│   ├── reference-images/     the 11 original pitch screenshots this project is built from
+│   └── imaging-eval-results.{jsonl,md}  raw per-case results and generated report of the real-image evaluation
+├── .github/
+│   ├── workflows/ci.yml           pytest on Python 3.11 + 3.13, against requirements.txt and the lock file
+│   ├── workflows/security-audit.yml  weekly pip-audit of the lock file
+│   ├── dependabot.yml             weekly dependency + Actions updates
+│   └── CODEOWNERS
+├── .githooks/pre-commit           refuses to commit .env (enable with core.hooksPath)
 ├── src/glassbox_md/
 │   ├── state.py               MedicalPipelineState -- the LangGraph state schema
 │   ├── audit.py                shared helper for building audit log entries
 │   ├── disclaimer.py          the intended-use disclaimer, defined once
 │   ├── case_store.py          local SQLite persistence for completed cases (done)
 │   ├── pipeline.py             wires all six agents into one LangGraph StateGraph (done)
+│   ├── imaging_eval.py         real-image evaluation: sampling, scoring, Wilson CIs, report (done)
 │   └── agents/
 │       ├── data_preparation.py   unit conversion + terminology normalization (done)
 │       ├── document_parser.py    PDF (pdfplumber) + DICOM (pydicom), separate paths (done)
@@ -255,7 +300,8 @@ healthcare/
 │       ├── diagnostic_prediction.py Structured differential via OpenRouter (done)
 │       └── explainability.py       Citation-grounded narrative + real SHAP demo (done)
 ├── scripts/
-│   └── build_literature_index.py  offline: fetch PubMed, build the RAG index
+│   ├── build_literature_index.py  offline: fetch PubMed, build the RAG index
+│   └── eval_imaging.py            slow, networked: run + report the real-image evaluation
 ├── data/
 │   ├── README.md              what goes in each subfolder, and what must never go there
 │   ├── imaging/                public/synthetic imaging data only
@@ -267,7 +313,8 @@ healthcare/
 │   ├── test_state.py           tests for the privacy-boundary runtime guard
 │   ├── test_pipeline.py        conditional routing + full end-to-end graph test
 │   └── test_validation.py      Phase 9: 14 diverse synthetic cases, full-state PII sweep
-├── requirements.txt           dependencies, grouped by the phase that introduces them
+├── requirements.txt           minimum versions, grouped by the phase that introduces them
+├── requirements.lock.txt      exact pins for all platforms, Python >= 3.11 (uv pip compile)
 ├── pyproject.toml             project metadata + pytest config
 └── .env.example                copy to .env and fill in API keys (never commit .env)
 ```
@@ -277,17 +324,22 @@ healthcare/
 ```bash
 python -m venv .venv
 .venv\Scripts\activate        # Windows
-pip install -r requirements.txt   # or just the Phase 0 group -- see requirements.txt
+pip install -r requirements.lock.txt   # exact tested versions; or requirements.txt for newest compatible
+python -m spacy download en_core_web_lg   # ~587MB; the PII agent needs it and fails fast without it
 pip install -e .
 copy .env.example .env        # then fill in your API key(s)
+git config core.hooksPath .githooks   # pre-commit hook that refuses to commit .env
 pytest
 ```
 
-`requirements.txt` lists every phase's dependencies up front so the shape
-of the environment is visible, but several groups (spaCy's language
-model, chromadb's first embedding-model download, shap's native build)
-are slow and better installed deliberately when you reach that phase
-rather than as a side effect of one big install.
+`requirements.txt` states minimum versions, grouped by the phase that
+first needs them; `requirements.lock.txt` is its exact resolution for all
+platforms and Python >= 3.11 (regenerate it with the `uv pip compile`
+command in `requirements.txt`'s header). CI runs the full suite on
+Python 3.11 and 3.13 against both files, so neither drifts unnoticed, and
+a separate weekly workflow audits the lock file with `pip-audit`.
+Several groups (spaCy's language model, chromadb's first embedding-model
+download, shap's native build) are slow to install -- expect a while.
 
 To make the RAG agent actually return results (Phase 4), build the
 literature index once, offline:
@@ -341,16 +393,23 @@ shouldn't have to read thirty bullet points to find the honest gaps:
   public dataset, by design, and says so in the report -- see why under
   Design decisions. Explaining an actual case is the citation-grounded
   narrative's job, not SHAP's, in this design.
-- **PII redaction covers 12 of the 18 HIPAA Safe Harbor identifier
-  categories** (names, dates, phone/fax, email, geographic subdivisions,
-  SSNs, URLs, IPs, ITINs, and -- newly -- health plan beneficiary numbers
-  via Medicare Beneficiary IDs, account numbers, and medical
-  license/DEA certificate numbers, plus custom label-gated patterns for
-  medical record numbers and vehicle identification numbers) via
-  Presidio + spaCy. Biometric identifiers, full-face photographs
-  (pixel-level DICOM defacing), and vehicle license plates are not
-  addressed -- listed explicitly in `privacy_protection.py`, not implied
-  away.
+- **PII redaction is stated per HIPAA Safe Harbor category, not as one
+  headline number.** An earlier "12 of 18" here (and in the module
+  docstring) didn't hold under any single counting rule. Under one stated
+  rule -- a category is "addressed" if some detector redacts a realistic
+  synthetic value of it -- 16 of 18 are addressed: 7 complete in kind
+  (names, phone, fax, email, SSN, URLs, IPs), 4 only behind an explicit
+  label (medical record numbers, account numbers, vehicle VINs and
+  license plates, device serial numbers/UDIs in free text -- a bare value
+  with no label is deliberately not redacted), and 5 partial (geographic
+  subdivisions: a street number survives and ZIP codes aren't reliably
+  caught; dates: ages over 89 only as "N years old"; health plan numbers:
+  Medicare only; certificate/license numbers: DEA-format only; the
+  open-ended "any other unique identifier": ITINs only). Biometric
+  identifiers and full-face photographs (pixel-level DICOM defacing) are
+  not addressed. This is a tiering of my own under a stated rule, not a
+  regulatory determination -- see `privacy_protection.py` for the full
+  per-category table and each recognizer's known misses.
 - **Case persistence is one local SQLite file, not a real database
   service.** `case_store.py` gives "Confirm reviewed by clinician" a
   real, durable record (see Status/Design decisions below) -- but it's
@@ -373,35 +432,48 @@ shouldn't have to read thirty bullet points to find the honest gaps:
   hypothesized: a request with a synthetic brain-MRI-shaped image got
   back a bare content-safety verdict instead of an answer, twice in a
   row. Retried automatically now (see Design decisions).
-- **Tested against 4 real, non-synthetic images -- mostly right on the
-  headline call, consistently wrong about hardware.** Real, CC-BY-4.0
-  pediatric chest X-rays (Hugging Face `hf-vision/chest-xray-pneumonia`,
-  test split: one NORMAL and three PNEUMONIA rows) were DICOM-wrapped and
-  run through the live app, one at a time. 3 of 4 landed a defensible top
-  call: the NORMAL case correctly topped with "normal pediatric chest
-  variant" (0.35), one PNEUMONIA case correctly topped with "right lower
-  lobe pneumonia" (0.40), and a second landed in the right family ("viral
-  bronchiolitis or mild viral pneumonia," 0.30). The fourth (the first one
-  tested, row 300) missed the pathology entirely -- top call congenital
-  heart disease, 0.15. A separate, repeatable failure mode showed up
-  independently of whether the headline call was right: on two different
-  images the model named specific external hardware that isn't what it
-  claimed -- a "central venous line" and, separately, a "port-a-cath" --
-  when the actual artifact in both cases (confirmed by zooming into the
-  same image) is a plain external clip/fastener, not an implanted or
-  indwelling device. So the pattern isn't "ignores the pixels" or
-  "hallucinates freely" -- it's closer to "usually gets the gist, will
-  confabulate a specific device label along the way, and confidence
-  doesn't reliably track which is happening" (0.40 on the correct call
-  that also had the fabricated port-a-cath; 0.15 on the one that missed
-  the pathology outright). n=4, all from one dataset, one sitting -- a
-  real signal, not a systematic evaluation across conditions, imaging
-  modalities, or patient populations.
-- **No formal clinical validation** -- no accuracy, sensitivity, or
-  specificity metrics against a labeled dataset, and none are claimed.
-  This is a portfolio demonstration of an architecture, not a validated
-  diagnostic tool; see the disclaimer at the top of this file.
-- **English-only.** `en_core_web_sm`'s NER recall on non-English or
+- **Measured on 24 real chest X-rays: the model's top-1 is right about a
+  third of the time, and its confidence doesn't say which third.** A
+  seeded, class-balanced sample (12 NORMAL + 12 PNEUMONIA) of the Kermany
+  pediatric chest X-ray test split (Hugging Face
+  `hf-vision/chest-xray-pneumonia`, CC BY 4.0) was run image-only through
+  the real pipeline with `scripts/eval_imaging.py`; per-case results and
+  the generated report are in `docs/imaging-eval-results.*`. Top-1
+  accuracy 33% (8/24, 95% CI 18-53%): sensitivity 50% (6/12, CI 25-75%),
+  specificity 17% (2/12, CI 5-45%). Pneumonia appeared somewhere in the
+  top 3 for 10 of the 12 pneumonia films (83%). The pipeline abstained on
+  17 of 24 (71%); of the 7 cases it committed to, 1 was right. Mean
+  confidence was 0.32 on correct answers and 0.37 on incorrect ones --
+  no usable signal. On normal films the model usually reached for a
+  diagnosis: 10 of 12 top-1s named an abnormality, including two
+  "cleidocranial dysplasia" reads (one committed at 0.65 confidence) and
+  "non-accidental trauma with healing rib fractures". Two things to read
+  that specificity through. The system prompt asks for "a ranked
+  differential of possible conditions" from labs, history and literature;
+  it never mentions imaging and never offers "no abnormality" as an
+  answer, so the number partly measures the prompt, not only the model's
+  vision. And scoring is deliberately strict (bronchiolitis and lower
+  respiratory infection are not credited as pneumonia): crediting them
+  lifts sensitivity to 8/12 (67%, CI 39-86%) but then calls 4 of 12
+  normal films pneumonia-family. The 24 cases were served by four
+  different free models, so this measures a moving mix, not one model.
+  This replaces an earlier n=4 manual impression here ("3 of 4 headline
+  calls right"), which did not survive a larger sample. One dataset
+  (pediatric, one hospital), image-only input, free-tier models: a real
+  measurement, still not clinical validation.
+- **Dependency audit knowingly ignores four ChromaDB advisories.** All
+  four (pre-auth code injection, tenant/RBAC checks) are against
+  ChromaDB's *server* mode, this project only uses the embedded in-process
+  client, and the advisories list no fixed release. The weekly workflow
+  ignores them by ID with that reasoning in the file, to be removed once a
+  fix ships; everything else in the lock file audits clean.
+- **No formal clinical validation.** The only accuracy, sensitivity and
+  specificity figures are the 24-image, image-only chest X-ray measurement
+  above, on free-tier models -- nothing exists for the lab/history
+  conditions the pipeline is mostly scoped to. This is a portfolio
+  demonstration of an architecture, not a validated diagnostic tool; see
+  the disclaimer at the top of this file.
+- **English-only.** `en_core_web_lg`'s NER recall on non-English or
   unusual names is not something this project has tested or tuned for.
 
 ## Design decisions worth knowing
@@ -455,12 +527,13 @@ shouldn't have to read thirty bullet points to find the honest gaps:
   full reasoning.
 - **"HIPAA compliance" and "differential privacy" are gone from this
   agent's naming**, replaced with what it actually does: NER-based
-  redaction (Presidio + spaCy) for 12 of the 18 HIPAA Safe Harbor
-  identifiers, three custom label-gated pattern recognizers (medical
-  record numbers, account numbers, vehicle identification numbers), and
-  DICOM tag stripping for device/institution identifiers. Coverage gaps
-  (biometrics, face photos, vehicle license plates) are listed explicitly
-  in the module docstring rather than implied away by a blanket
+  redaction (Presidio + spaCy), five custom label-gated pattern
+  recognizers (medical record numbers, account numbers, vehicle
+  identification numbers, license plates, free-text device serial
+  numbers/UDIs), and DICOM tag stripping for device/institution
+  identifiers. Coverage gaps (biometrics, face photos, and the
+  per-category partials in Known limitations) are listed explicitly in
+  the module docstring rather than implied away by a blanket
   "compliant" claim -- per the privacy critique.
 - **Broadening PII coverage meant reading Presidio's own recognizer
   source, not just adding every entity name it ships.** Several of
@@ -488,9 +561,21 @@ shouldn't have to read thirty bullet points to find the honest gaps:
   log with a phantom second entity type. Fixed by counting from the
   anonymizer's own resolved `items` instead; see
   `test_itin_does_not_double_count_an_overlapping_ssn`.
-- **spaCy model: `en_core_web_sm`, not `_lg`.** ~15MB vs ~587MB, lower
-  NER recall on unusual names -- fine for this MVP's synthetic test
-  corpus, not a claim about production-grade recall on messy real text.
+- **spaCy model: `en_core_web_lg` (~587MB) -- and this entry used to say
+  the opposite.** It, `requirements.txt` and the module docstring all
+  claimed `en_core_web_sm` (~15MB), but `AnalyzerEngine()` with no
+  `nlp_engine` argument loads `_lg` by default and this project never
+  configured anything else (verified: the loaded pipeline's
+  `meta["name"]` is `core_web_lg`). It went unnoticed because the dev
+  environment had `_lg` installed, and because Presidio silently downloads
+  a missing model at first use. Found while setting up CI: the workflow
+  installed `_sm`, tests still passed via the silent download, and a
+  pip-less environment crashed with `SystemExit: 2`. Fixed by making the
+  docs, setup and CI say `_lg`, and by failing fast with the install
+  command instead of a mid-request download. Not switched to `_sm`:
+  that would lower name-detection recall -- the one thing this agent has
+  no structural check for -- and needs measuring first. Recall here is on
+  synthetic test text, not a claim about messy real-world text.
 - **A real gotcha found while testing:** Presidio's `US_SSN` recognizer
   explicitly denylists `123-45-6789` -- the one SSN everyone reaches for
   in a tutorial -- specifically so it doesn't false-positive on sample
@@ -660,10 +745,12 @@ shouldn't have to read thirty bullet points to find the honest gaps:
   response_then_succeeds` and `test_call_openrouter_gives_up_after_
   repeated_malformed_responses` in `tests/test_diagnostic_prediction.py`.
   Whether the underlying model can meaningfully interpret real medical
-  imagery has since been tested live against 4 real labeled chest X-rays
-  -- it got the headline call right more often than not, but reliably
-  mislabeled incidental hardware in the image regardless; see Known
-  Limitations.
+  imagery has since been measured on 24 real labeled chest X-rays: top-1
+  correct about a third of the time, with confidence no better than
+  chance at telling which third; see Known Limitations. Running that
+  evaluation also found two retry gaps in this same call (a `choices:
+  null` body, and an upstream provider's 400 relayed by the router), both
+  fixed and covered in `tests/test_diagnostic_prediction.py`.
 - **The whole graph is tested end to end, offline.** `test_pipeline_runs_
   all_six_stages_with_audit_log_accumulating` builds a real synthetic PDF,
   runs it through the real compiled `StateGraph` (all six real agents,
