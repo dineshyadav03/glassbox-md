@@ -1,7 +1,10 @@
 # Grouped by the pipeline phase that first needs them (see the project
-# brief's task list). Versions are minimums, not exact pins -- run
-# `pip freeze > requirements.lock.txt` after your first clean install and
-# commit that alongside this file for a reproducible environment.
+# brief's task list). Versions here are minimums, not exact pins.
+# requirements.lock.txt is the exact, reproducible resolution of this
+# file (all platforms, Python >= 3.11) -- install from it for a
+# byte-for-byte environment, or from this file to get the latest
+# compatible versions. Regenerate it after editing this file with:
+#   uv pip compile requirements.txt --universal --python-version 3.11 -o requirements.lock.txt
 #
 # Only the Phase 0 group is installed as part of scaffolding; the rest are
 # listed now so the full shape of the environment is visible up front, but
@@ -33,10 +36,13 @@ numpy>=1.26  # pydicom needs it for .pixel_array
 presidio-analyzer>=2.2
 presidio-anonymizer>=2.2
 spacy>=3.7
-# after installing spacy: python -m spacy download en_core_web_sm
-# (en_core_web_sm, not _lg: ~15MB vs ~587MB. Lower NER recall on unusual
-# names, but this MVP redacts synthetic test documents, not a real-world
-# corpus -- upgrade to _lg or _trf if recall on messy real text matters later.)
+# after installing spacy: python -m spacy download en_core_web_lg
+# (~587MB.) This is the model Presidio's default AnalyzerEngine() actually
+# loads -- an earlier version of this comment said en_core_web_sm, but the
+# code never configured that; without _lg installed, Presidio silently
+# downloads it at first use (found while setting up CI). Every test and
+# live run to date used _lg, so it stays; switching to the ~15MB _sm would
+# lower NER recall on names and needs measuring first.
 
 # --- Phase 4: Medical Knowledge RAG Agent ---
 chromadb>=0.5
@@ -61,6 +67,7 @@ chromadb>=0.5
 # full account.
 openai>=1.50
 tenacity>=8.2  # retry/backoff around the OpenRouter call specifically (Phase 7)
+pillow>=10.0  # diagnostic_prediction.py converts DICOM pixel data to PNG for the multimodal prompt; was only ever present as a transitive dependency of other packages
 
 # --- Phase 6: Explainability Agent ---
 shap>=0.45
@@ -69,6 +76,16 @@ pandas>=2.2
 
 # --- Phase 8: UI ---
 chainlit>=1.1
+
+# --- Security floors for transitive dependencies ---
+# Not imported by this project directly; pinned as a minimum only so the
+# resolver can't land on a release with a published advisory (found by
+# pip-audit: PKCS#7 decryption oracle + X.509 path-building issues, fixed
+# in 49.0.0 / 50.0.0). Reached via pyjwt, pdfminer-six, presidio-anonymizer.
+# Side effect: presidio-anonymizer resolves to 2.2.362 instead of 2.2.364,
+# whose metadata caps cryptography below 49 -- this project only uses its
+# redact/replace operators, never the encrypt operator that needs it.
+cryptography>=50.0
 
 # --- Dev / testing ---
 pytest>=8.0

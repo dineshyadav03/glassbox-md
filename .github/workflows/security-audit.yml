@@ -1,0 +1,44 @@
+name: Dependency audit
+
+# Separate from CI on purpose: a newly published advisory should raise a
+# flag on its own schedule, not turn an unrelated pull request red.
+on:
+  schedule:
+    - cron: "0 6 * * 1"
+  push:
+    paths:
+      - requirements.txt
+      - requirements.lock.txt
+      - .github/workflows/security-audit.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  pip-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+
+      - name: Install pip-audit
+        run: pip install pip-audit
+
+      # Audits the exact pinned versions in the lock file. The four
+      # chromadb IDs below are all advisories against ChromaDB's *server*
+      # mode (pre-auth code injection, tenant/RBAC checks). This project
+      # only uses the embedded in-process PersistentClient and never runs
+      # a Chroma server, and the advisories list no fixed release
+      # (last_affected = latest). Remove these ignores once a fix ships.
+      - name: Audit locked dependencies
+        run: >
+          pip-audit -r requirements.lock.txt --no-deps --disable-pip
+          --ignore-vuln PYSEC-2026-311
+          --ignore-vuln PYSEC-2026-3813
+          --ignore-vuln PYSEC-2026-3814
+          --ignore-vuln PYSEC-2026-3815

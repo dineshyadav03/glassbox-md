@@ -1,0 +1,64 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: test (py${{ matrix.python-version }}, ${{ matrix.deps }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.13"]
+        # latest = requirements.txt (newest compatible versions, catches
+        # upstream breakage early); locked = requirements.lock.txt (the
+        # exact resolution a fresh clone is told to use).
+        deps: [latest, locked]
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements.lock.txt
+
+      - name: Install dependencies (latest compatible)
+        if: matrix.deps == 'latest'
+        run: pip install -r requirements.txt
+
+      - name: Install dependencies (locked)
+        if: matrix.deps == 'locked'
+        run: pip install -r requirements.lock.txt
+
+      # en_core_web_lg is what Presidio's default AnalyzerEngine() loads;
+      # installing it here keeps the tests from depending on Presidio's
+      # silent runtime auto-download.
+      - name: Install spaCy model and the project itself
+        run: |
+          python -m spacy download en_core_web_lg
+          pip install -e . --no-deps
+
+      # ChromaDB's default embedding function downloads a ~80MB ONNX model on
+      # first use; caching it keeps the RAG tests from re-fetching every run.
+      - uses: actions/cache@v6
+        with:
+          path: ~/.cache/chroma
+          key: chroma-onnx-minilm-${{ runner.os }}
+
+      - name: Run tests
+        run: pytest -q
