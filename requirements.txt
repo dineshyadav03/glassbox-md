@@ -75,7 +75,7 @@ scikit-learn>=1.4
 pandas>=2.2
 
 # --- Phase 8: UI ---
-chainlit>=1.1
+chainlit>=2.12,<3  # app.py uses the 2.x API (cl.Action(payload=...), AskFileMessage, password_auth_callback); 2.12 is the version the lock pins and CI tests
 
 # --- Security floors for transitive dependencies ---
 # Not imported by this project directly; pinned as a minimum only so the

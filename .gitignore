@@ -48,3 +48,7 @@ desktop.ini
 .pytest_cache/
 .ruff_cache/
 *.egg-info
+
+# Local Claude Code / preview-tool config. launch.json held an absolute path
+# under a personal home directory, so it is not tracked.
+.claude/

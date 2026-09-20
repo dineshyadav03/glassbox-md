@@ -14,6 +14,30 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  lock-sync:
+    name: lock file matches requirements.txt
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+
+      # Recompiles requirements.txt with the committed pins as preferences
+      # (uv keeps an existing output file's versions when they still
+      # satisfy the input), so this only fails when requirements.txt was
+      # edited without regenerating the lock, or a pinned version vanished.
+      # The first two lines are a header that names the output file.
+      - name: Recompile and compare
+        run: |
+          pip install uv
+          cp requirements.lock.txt /tmp/relock.txt
+          uv pip compile requirements.txt --universal --python-version 3.11 -o /tmp/relock.txt
+          diff <(tail -n +3 requirements.lock.txt) <(tail -n +3 /tmp/relock.txt) \
+            || { echo "::error::requirements.lock.txt is out of date -- regenerate it (command in requirements.txt's header)"; exit 1; }
+
   test:
     name: test (py${{ matrix.python-version }}, ${{ matrix.deps }})
     runs-on: ubuntu-latest
