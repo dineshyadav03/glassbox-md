@@ -131,6 +131,295 @@ def test_redacts_vehicle_identification_number():
     assert counts.get("VEHICLE_IDENTIFICATION_NUMBER", 0) == 1
 
 
+@pytest.mark.parametrize(
+    "text, secret",
+    [
+        ("Device Serial Number: SN-48213907", "SN-48213907"),
+        ("Pacemaker Serial No. PM4482917", "PM4482917"),
+        ("Serial #: XR200987", "XR200987"),
+        ("S/N: 9981-2234-AB", "9981-2234-AB"),
+        ("Device ID: 4471829", "4471829"),
+        ("Device Identifier 0F82A9C1", "0F82A9C1"),
+        ("UDI: (01)00844588003288(17)141120(10)7654321D(21)10987654321", "00844588003288"),
+        ("UDI: +H123PARTNO1234567890/$$52001510X3", "PARTNO1234567890"),
+        ("SERIAL NO. ab12cd34", "ab12cd34"),
+    ],
+)
+def test_redacts_free_text_device_identifier(text, secret):
+    redacted, counts = redact_text(text)
+    assert secret not in redacted
+    assert counts.get("DEVICE_IDENTIFIER", 0) == 1
+
+
+@pytest.mark.parametrize(
+    "text, secret",
+    [
+        ("License Plate: ABC1234", "ABC1234"),
+        ("License plate number: 7XYZ123", "7XYZ123"),
+        ("Licence Plate ABC 1234", "ABC 1234"),
+        ("Plate No. 123-ABC", "123-ABC"),
+        ("Plate #: AB-123", "AB-123"),
+        ("Plate Number: 4KLM892", "4KLM892"),
+        ("Tag # 6FTR421", "6FTR421"),
+    ],
+)
+def test_redacts_vehicle_license_plate(text, secret):
+    redacted, counts = redact_text(text)
+    assert secret not in redacted
+    assert counts.get("VEHICLE_LICENSE_PLATE", 0) == 1
+
+
+def test_device_and_plate_redaction_keeps_the_surrounding_sentence():
+    redacted, counts = redact_text("Implant serial number ABC-98765-XYZ; License Plate: 7XYZ123.")
+    assert redacted == "Implant <DEVICE_IDENTIFIER>; <VEHICLE_LICENSE_PLATE>."
+    assert counts == {"DEVICE_IDENTIFIER": 1, "VEHICLE_LICENSE_PLATE": 1}
+
+
+def test_device_identifier_shaped_like_a_phone_number_counts_once():
+    """Same overlap risk as the ITIN/SSN regression below: a serial that is
+    also phone-shaped matches two recognizers on overlapping spans. The
+    anonymizer keeps the labelled, wider match; the counts must show one
+    DEVICE_IDENTIFIER and no phantom PHONE_NUMBER."""
+    redacted, counts = redact_text("Serial No: 555-123-4567")
+    assert "555-123-4567" not in redacted
+    assert counts == {"DEVICE_IDENTIFIER": 1}
+
+
+def test_device_id_and_mrn_with_the_same_digits_are_counted_separately():
+    redacted, counts = redact_text("Device ID: 4471829 and MRN: 4471829")
+    assert "4471829" not in redacted
+    assert counts == {"DEVICE_IDENTIFIER": 1, "MEDICAL_RECORD_NUMBER": 1}
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Pump housing 9981-2234-AB was replaced.",
+        "Parked car was 7XYZ123, dark blue.",
+    ],
+)
+def test_device_and_plate_values_without_a_label_are_left_alone(text):
+    """Documents the gate's cost, not just its benefit (see the module
+    docstring): the identical value with no label in front of it is NOT
+    redacted. Asserting it keeps that limitation a deliberate, visible
+    choice -- if a future change starts catching bare values, the
+    negative corpus below needs re-checking at the same time."""
+    redacted, _ = redact_text(text)
+    assert redacted == text
+
+
+def test_value_on_the_line_below_its_label_is_not_claimed_by_the_label():
+    """Same-line-only gap between label and value. A heading that ends a
+    line ("Serial Number") must not swallow the first token of the next
+    line ("HbA1c") -- the false positive that led to horizontal-only
+    whitespace ([^\\S\\r\\n], which still matches NBSP) instead of \\s."""
+    text = "Serial Number\nHbA1c 8.0"
+    redacted, _ = redact_text(text)
+    assert redacted == text
+
+
+# Realistic lab/history text that mentions the trigger words in ordinary
+# clinical senses. Every entry must come out byte-identical; this is the
+# regression net for the two label-gated recognizers above, in the same
+# spirit as the lab-panel test below. Phrases that trip the *pre-existing*
+# DATE_TIME/PERSON recognizers ("over 3 days", "Plateau reached at week 12")
+# are deliberately kept out so a failure here always means a new recognizer.
+_ORDINARY_TEXT_WITH_TRIGGER_WORDS = [
+    "Platelet count 250 x10^9/L",
+    "Platelet count: 250, MPV 9.8 fL",
+    "Fasting glucose: 205 mg/dL, HbA1c: 8.0%, Total Cholesterol: 200 mg/dL, Reference Range 70-100",
+    "Serial creatinine 1.2, 1.4, 1.9 mg/dL.",
+    "Serial testing is recommended.",
+    "Serial nodules noted in the right lung.",
+    "Serial no evidence of progression on imaging.",
+    "Serial Number: not recorded",
+    "Serial number of samples: 5",
+    "Serial #3 culture grew no organisms.",
+    "S/N ratio was acceptable.",
+    "Device: insulin pump",
+    "Device ID pending",
+    "Device ID verification was completed.",
+    "Device identifier confirmed before the procedure.",
+    "Pacemaker Serial No. pending",
+    "UDI: not available",
+    "UDI required by regulation",
+    "The plate count was 250.",
+    "Plate 3 of the culture showed growth.",
+    "Plate No. 3 of the culture showed growth.",
+    "Plate number 4 was contaminated.",
+    "Agar plate showed colony growth.",
+    "License plate reader data was not reviewed.",
+    "License plate: pending",
+    "License plate is unknown",
+    "Driver's license status: valid.",
+    "Patient holds a valid license to drive.",
+    "Tag # 5",
+    "Tag removed from the specimen.",
+    "Skin tag on the left forearm, 4 mm.",
+    "Vehicle accident reported; no VIN recorded.",
+    "Serial Number\nHbA1c 8.0",
+    # Found by independent review, not by the first round of tests: UDI is
+    # also the Urogenital Distress Inventory, and the MRN label used to run
+    # into "Patient identified".
+    "UDI-6/IIQ-7 scores improved after sling surgery.",
+    "PFDI-20 (UDI-6/CRADI-8/POPDI-6) reviewed.",
+    "Patient identified by two identifiers.",
+    "MRN pending",
+    "MRN: pending",
+    "Plate\nNo. 12345 not used",
+    "Serial No: 12",
+]
+
+
+@pytest.mark.parametrize("text", _ORDINARY_TEXT_WITH_TRIGGER_WORDS)
+def test_ordinary_text_with_trigger_words_passes_through_byte_identical(text):
+    redacted, counts = redact_text(text)
+    assert redacted == text
+    assert counts == {}
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Serial Number: SN48213907",
+        "Serial No. PM4482917",
+        "License Plate: ABC1234",
+        "Plate No. ABC1234",
+        "Serial Number: SN48213907",
+    ],
+)
+def test_non_breaking_and_thin_spaces_after_a_label_do_not_defeat_redaction(text):
+    """Word/HTML-derived PDF text puts NBSP or a thin space after the colon.
+    An earlier `[ \\t]` gap missed those, so the older MRN/Account/VIN
+    recognizers redacted the same layout while the new ones leaked -- a
+    real PHI leak found by review."""
+    redacted, counts = redact_text(text)
+    assert redacted.startswith("<") and redacted.endswith(">")
+    assert sum(counts.values()) == 1
+
+
+@pytest.mark.parametrize(
+    "text, hidden",
+    [
+        ("UDI: (01)00844588003288 (17)141120 (10)7654321D (21)10987654321", ["141120", "7654321D", "10987654321"]),
+        ("Serial No. AB123/4567", ["4567"]),
+        ("Serial No. AB123.4567", ["4567"]),
+        ("Serial No: 12345 6789", ["6789"]),
+        ("Serial number PM 4482917", ["4482917"]),
+        ("License Plate: ABC-1234-5", ["-5"]),
+        ("License Plate: CA 7ABC123", ["7ABC123"]),
+        ("License Plate: AB12 CDE", ["CDE"]),
+    ],
+)
+def test_redaction_covers_the_whole_value_not_just_its_first_segment(text, hidden):
+    """A partial match is worse than a miss here: it reports a redaction
+    while the patient-specific tail (a UDI's (21) serial, the part of a
+    serial after a slash) stays in the output."""
+    redacted, counts = redact_text(text)
+    for fragment in hidden:
+        assert fragment not in redacted
+    assert sum(counts.values()) == 1
+
+
+@pytest.mark.parametrize(
+    "text, secret",
+    [
+        ("Pacemaker SN: PM4482917", "PM4482917"),
+        ("Pacemaker Serial: PM4482917", "PM4482917"),
+        ("Device Number: 4482917", "4482917"),
+        ("Vehicle plate: ABC1234", "ABC1234"),
+        ("Tag Number: ABC1234", "ABC1234"),
+        ("UDI-DI: 00844588003288", "00844588003288"),
+    ],
+)
+def test_additional_common_label_spellings_are_recognised(text, secret):
+    redacted, counts = redact_text(text)
+    assert secret not in redacted
+    assert sum(counts.values()) == 1
+
+
+@pytest.mark.parametrize(
+    "text, secret",
+    [
+        ("MRN4471829", "4471829"),
+        ("MRN: 4471829", "4471829"),
+        ("Patient ID 88123-77", "88123-77"),
+    ],
+)
+def test_mrn_still_redacted_after_tightening_the_label_and_value_rules(text, secret):
+    redacted, counts = redact_text(text)
+    assert secret not in redacted
+    assert counts.get("MEDICAL_RECORD_NUMBER", 0) == 1
+
+
+def test_label_gated_recognizers_outscore_spacy_ner_so_ties_are_not_hash_seed_dependent():
+    """spaCy NER's default score is 0.85. At an equal score, "MRN4471829"
+    (one token NER tags PERSON) was labelled PERSON or MEDICAL_RECORD_NUMBER
+    depending on PYTHONHASHSEED -- 3 of 8 seeds. The value was redacted
+    either way; the audit-log counts were the nondeterministic part."""
+    from glassbox_md.agents import privacy_protection as pp
+
+    recognizers = [
+        pp._MRN_RECOGNIZER,
+        pp._ACCOUNT_NUMBER_RECOGNIZER,
+        pp._VIN_RECOGNIZER,
+        pp._LICENSE_PLATE_RECOGNIZER,
+        pp._DEVICE_IDENTIFIER_RECOGNIZER,
+    ]
+    assert all(pattern.score > 0.85 for r in recognizers for pattern in r.patterns)
+
+
+def test_missing_spacy_model_fails_fast_with_the_install_command(monkeypatch):
+    """Without this guard Presidio runs `spacy download` mid-request, which
+    in an environment with no pip raises SystemExit -- a BaseException that
+    can end the whole process rather than fail one case."""
+    from glassbox_md.agents import privacy_protection as pp
+
+    monkeypatch.setattr(pp, "_analyzer", None)
+    monkeypatch.setattr(pp.spacy.util, "is_package", lambda name: False)
+    with pytest.raises(RuntimeError, match=r"python -m spacy download en_core_web_lg"):
+        pp._get_analyzer()
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Serial creatinine 1.2, 1.4, 1.9 mg/dL over 3 days",
+        "Serial testing is recommended every 6 months.",
+        "Colonies on the agar plate at 48 hours.",
+        "Driver's license renewed in 2019; license plate reader not used.",
+    ],
+)
+def test_new_recognizers_stay_silent_on_text_that_trips_older_ones(text):
+    """These do get touched by the pre-existing DATE_TIME recognizer, so
+    byte-identical is the wrong assertion -- what matters is that the
+    device/plate recognizers themselves don't fire."""
+    _, counts = redact_text(text)
+    assert "DEVICE_IDENTIFIER" not in counts
+    assert "VEHICLE_LICENSE_PLATE" not in counts
+
+
+# One positive test per remaining detector behind the module docstring's
+# "addressed" tiers, so each claim there has an assertion behind it.
+@pytest.mark.parametrize(
+    "text, entity, secret",
+    [
+        ("Seen in Springfield, Illinois.", "LOCATION", "Springfield"),
+        ("Seen on March 14, 2021.", "DATE_TIME", "March 14, 2021"),
+        ("She is 95 years old.", "DATE_TIME", "95"),
+        ("Call (555) 234-5678 for results.", "PHONE_NUMBER", "234-5678"),
+        ("Fax: 555-234-5679", "PHONE_NUMBER", "234-5679"),
+        ("Contact jane.doe@example.org for records.", "EMAIL_ADDRESS", "jane.doe@example.org"),
+        ("See https://portal.example.org/patient/123", "URL", "portal.example.org"),
+        ("Logged from 192.168.10.44", "IP_ADDRESS", "192.168.10.44"),
+    ],
+)
+def test_redacts_each_ner_and_shape_based_detector(text, entity, secret):
+    redacted, counts = redact_text(text)
+    assert secret not in redacted
+    assert counts.get(entity, 0) >= 1
+
+
 def test_realistic_lab_panel_text_passes_through_unredacted():
     """The existing test_unrecognized_clinical_text_passes_through has no
     digits in it at all, so it can't catch a false-positive regression
@@ -243,6 +532,28 @@ def test_agent_combines_pdf_and_dicom_documents():
     assert result["stage_status"]["privacy_protection"]["status"] == "ok"
 
 
+def test_agent_audit_log_counts_new_entity_types_without_their_values():
+    state = _base_state(
+        extracted_document_content={
+            "documents": [
+                _pdf_document(text="Device Serial Number: SN-48213907\nLicense Plate: ABC1234\nHistory: T2DM."),
+                _pdf_document(text="Pacemaker Serial No. PM4482917"),
+            ],
+            "parse_errors": [],
+        },
+    )
+    result = privacy_protection_agent(state)
+
+    summary = result["audit_log"][0]["summary"]
+    # Counts accumulate across documents, same as every other entity type.
+    assert "DEVICE_IDENTIFIER:2" in summary
+    assert "VEHICLE_LICENSE_PLATE:1" in summary
+    for value in ("SN-48213907", "ABC1234", "PM4482917"):
+        assert value not in summary
+        assert value not in result["anonymized_patient_data"]["history_text"]
+    assert result["stage_status"]["privacy_protection"]["status"] == "ok"
+
+
 def test_agent_preserves_other_stages_status():
     state = _base_state(
         extracted_document_content={"documents": [_pdf_document(text="hello")], "parse_errors": []},
@@ -265,6 +576,8 @@ def test_no_planted_pii_survives_parser_and_privacy_together(tmp_path):
         "mrn_value": "4471829",
         "account_value": "90012345678",
         "vin_value": "1HGCM82633A123456",
+        "device_serial_value": "PM4482917",
+        "plate_value": "7XYZ123",
     }
 
     path = tmp_path / "fake_patient.pdf"
@@ -276,6 +589,8 @@ def test_no_planted_pii_survives_parser_and_privacy_together(tmp_path):
     c.drawString(72, 670, f"Account #: {planted['account_value']}")
     c.drawString(72, 650, f"VIN: {planted['vin_value']}")
     c.drawString(72, 630, "History: Patient has T2DM and HTN.")
+    c.drawString(72, 610, f"Pacemaker Serial No. {planted['device_serial_value']}")
+    c.drawString(72, 590, f"License Plate: {planted['plate_value']}")
     c.save()
 
     parser_state = _base_state(raw_input_paths=[str(path)])
