@@ -1,14 +1,13 @@
 version: 2
 updates:
-  - package-ecosystem: pip
-    directory: /
-    schedule:
-      interval: weekly
-    open-pull-requests-limit: 5
-    groups:
-      python-minor-and-patch:
-        update-types: [minor, patch]
-
+  # GitHub Actions versions only. The pip ecosystem is deliberately not
+  # configured: requirements.lock.txt is a *compiled* resolution, and
+  # Dependabot patches one pin at a time without re-resolving, which leaves
+  # the lock internally inconsistent (its first PRs bumped thinc 8 -> 9
+  # against a spaCy that requires thinc < 8.4, and every "locked" CI job
+  # failed). Refresh the lock with `uv pip compile ... --upgrade` instead
+  # (command in requirements.txt's header); the weekly pip-audit workflow
+  # is the advisory signal.
   - package-ecosystem: github-actions
     directory: /
     schedule:

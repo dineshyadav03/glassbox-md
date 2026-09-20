@@ -26,7 +26,11 @@ pytest
 ```
 
 If you change `requirements.txt`, regenerate the lock file with the
-`uv pip compile` command in that file's header and commit both.
+`uv pip compile` command in that file's header and commit both. To pick
+up newer versions, run the same command with `--upgrade`; CI's "locked"
+jobs then verify the result. Don't bump a single pin in the lock by hand
+(or via a bot) -- it is a compiled resolution, and one pin changed alone
+can make it internally inconsistent.
 
 That `core.hooksPath` line enables a pre-commit hook
 (`.githooks/pre-commit`) that refuses to commit `.env` even if it's

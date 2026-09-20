@@ -76,7 +76,8 @@ new code.** Infrastructure: GitHub Actions runs the full suite on Python
 3.11 and 3.13 against both `requirements.txt` and the new exact-pin
 `requirements.lock.txt` (verified by building a brand-new environment
 from it), a weekly `pip-audit` workflow covers the lock file, and
-Dependabot is configured. The audit found a real advisory set in
+Dependabot tracks GitHub Actions versions (its pip mode was tried and
+removed: it broke the compiled lock, and the locked CI jobs caught it). The audit found a real advisory set in
 `cryptography` (now floored at 50, fixed upstream) and undeclared use of
 Pillow (now declared). Setting up CI also exposed a wrong claim that had
 survived from Phase 3: the docs said the PII agent uses `en_core_web_sm`,
@@ -281,7 +282,7 @@ healthcare/
 ├── .github/
 │   ├── workflows/ci.yml           pytest on Python 3.11 + 3.13, against requirements.txt and the lock file
 │   ├── workflows/security-audit.yml  weekly pip-audit of the lock file
-│   ├── dependabot.yml             weekly dependency + Actions updates
+│   ├── dependabot.yml             weekly GitHub Actions updates (not pip -- see Setup)
 │   └── CODEOWNERS
 ├── .githooks/pre-commit           refuses to commit .env (enable with core.hooksPath)
 ├── src/glassbox_md/
@@ -335,9 +336,14 @@ pytest
 `requirements.txt` states minimum versions, grouped by the phase that
 first needs them; `requirements.lock.txt` is its exact resolution for all
 platforms and Python >= 3.11 (regenerate it with the `uv pip compile`
-command in `requirements.txt`'s header). CI runs the full suite on
-Python 3.11 and 3.13 against both files, so neither drifts unnoticed, and
-a separate weekly workflow audits the lock file with `pip-audit`.
+command in `requirements.txt`'s header; add `--upgrade` to pick up newer
+versions). CI runs the full suite on Python 3.11 and 3.13 against both
+files, so neither drifts unnoticed, and a separate weekly workflow audits
+the lock file with `pip-audit`. Dependabot is limited to GitHub Actions
+versions: pointed at the pip lock file it patched single pins without
+re-resolving (thinc 8 -> 9 against a spaCy that needs thinc < 8.4) and its
+first five PRs all failed the locked CI jobs, so the lock is refreshed
+with `--upgrade`, not per-pin bumps.
 Several groups (spaCy's language model, chromadb's first embedding-model
 download, shap's native build) are slow to install -- expect a while.
 
