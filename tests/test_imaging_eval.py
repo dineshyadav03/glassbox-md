@@ -778,6 +778,49 @@ def test_a_write_cut_off_inside_a_multibyte_character_is_skipped_not_fatal(tmp_p
     assert [r["row_idx"] for r in load_results(out)] == [1, 3]
 
 
+def test_run_eval_stops_cleanly_when_the_providers_daily_quota_is_exhausted(tmp_path):
+    """Seen live: after the free-tier daily quota ran out, the run kept
+    going and wrote 28 identical junk error records, each burning retries.
+    It should stop at the first one and say how to resume."""
+
+    class QuotaGraph:
+        def invoke(self, state):
+            raise RuntimeError("Error code: 429 - Rate limit exceeded: free-models-per-day")
+
+    out = tmp_path / "results.jsonl"
+    messages = []
+
+    ran = run_eval(
+        SAMPLE,
+        out,
+        graph=QuotaGraph(),
+        prepare=_fake_prepare(),
+        sleep=lambda s: None,
+        log=messages.append,
+    )
+
+    assert ran == 1  # the other two cases never ran
+    assert [r["row_idx"] for r in load_results(out)] == [10]
+    assert "per-day" in load_results(out)[0]["error"]
+    assert any("daily quota exhausted" in m and "--retry-errors" in m for m in messages)
+    assert completed_rows(out, retry_errors=True) == set()  # so --retry-errors re-runs it
+
+
+@pytest.mark.parametrize(
+    "error, expected",
+    [
+        ("Error code: 429 - Rate limit exceeded: free-models-per-day", True),
+        ("RATE LIMIT: FREE-MODELS-PER-DAY", True),
+        ("Error code: 429 - too many requests per minute", False),
+        ("connection reset", False),
+        ("", False),
+        (None, False),
+    ],
+)
+def test_daily_quota_detection_ignores_per_minute_limits_and_other_errors(error, expected):
+    assert imaging_eval.daily_quota_exhausted(error) is expected
+
+
 def test_provider_account_ids_are_scrubbed_before_a_record_reaches_the_results_file(tmp_path):
     """OpenRouter error bodies carry the caller's account id. The results
     file is committed, so it must never be written there."""

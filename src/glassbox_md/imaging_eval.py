@@ -503,6 +503,12 @@ def completed_rows(path: str | Path, retry_errors: bool = False) -> set[int]:
     return {r["row_idx"] for r in load_results(path) if not (retry_errors and r.get("error"))}
 
 
+def daily_quota_exhausted(error: str | None) -> bool:
+    """True if a record's error says the provider's PER-DAY quota is used up
+    (a per-minute rate limit is transient and does not count)."""
+    return bool(error) and "per-day" in error.lower()
+
+
 def resume_seed_conflict(path: str | Path, seed: int) -> str | None:
     """A message if `path` already holds results from a different seed, else
     None. Resume skips by row_idx only, so resuming under another seed would
@@ -544,6 +550,15 @@ def run_eval(
             record.update(tags or {})
             record["run_at"] = datetime.now(timezone.utc).isoformat()
             append_result(out_path, record)
+            if daily_quota_exhausted(record.get("error")):
+                # Every remaining case would fail the same way and just fill
+                # the results file with junk errors. Stop; the record that
+                # tripped this stays, so `--retry-errors` picks it up later.
+                log(
+                    "Provider daily quota exhausted -- stopping. Re-run the same command with --retry-errors "
+                    "once it resets (free-tier quotas reset daily)."
+                )
+                return position
             outcome = record["error"] or f"top-1: {record['top1_condition']!r}"
             # Progress output must never abort a long unattended run: the
             # record is already on disk, but a redirected stdout on Windows

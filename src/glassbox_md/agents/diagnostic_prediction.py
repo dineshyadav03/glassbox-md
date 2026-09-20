@@ -148,6 +148,10 @@ _RETRYABLE_ERRORS = (
     ValueError,
 )
 
+class DailyQuotaExhausted(RuntimeError):
+    """The provider's per-day request quota is used up. Not retryable."""
+
+
 # Below this, a returned differential is treated as "insufficient evidence"
 # rather than a usable result, per the clinical-safety critique's abstention
 # requirement. Arbitrary but explicit -- tune once real cases are available.
@@ -320,6 +324,14 @@ def _call_openrouter(
             temperature=0.2,
             timeout=REQUEST_TIMEOUT_SECONDS,
         )
+    except RateLimitError as exc:
+        # A per-minute limit clears in seconds and is worth the short retry
+        # below. A DAILY quota ("free-models-per-day") does not: retrying it
+        # only burns more of the quota and delays the failure. Raised as a
+        # type outside _RETRYABLE_ERRORS so it surfaces immediately.
+        if "per-day" in str(exc).lower():
+            raise DailyQuotaExhausted(str(exc)) from exc
+        raise
     except BadRequestError as exc:
         # OpenRouter relays an upstream provider's rejection as a 400 with
         # "Provider returned error" (seen live: 3 of 24 image requests, an
@@ -432,6 +444,8 @@ def diagnostic_prediction_agent(
         }
 
     abstained = model_response.overall_confidence < CONFIDENCE_THRESHOLD
+    served_by = getattr(model_response, "_served_by", None)
+    configured_model = os.environ.get(MODEL_ENV_VAR, DEFAULT_MODEL_NAME)
     result: DiagnosticPredictionResult = {
         "differential": [c.model_dump() for c in model_response.differential],
         "overall_confidence": model_response.overall_confidence,
@@ -440,8 +454,7 @@ def diagnostic_prediction_agent(
         "abstention_reason": "model confidence below threshold" if abstained else None,
         # The model that actually answered when the provider reported it,
         # else the configured name (which for a router is only an alias).
-        "model_name": getattr(model_response, "_served_by", None)
-        or os.environ.get(MODEL_ENV_VAR, DEFAULT_MODEL_NAME),
+        "model_name": served_by or configured_model,
     }
 
     status = {
@@ -452,6 +465,14 @@ def diagnostic_prediction_agent(
         f"{'abstained (low confidence)' if abstained else 'produced'} differential with "
         f"{len(result['differential'])} condition(s), confidence {result['overall_confidence']:.2f}"
         f"; {len(image_paths)} image(s) sent"
+        # In the audit trail, not just the result dict: the free router can
+        # answer with a different model every call, so "which model said
+        # this" is part of the record of any case.
+        + (
+            f"; model: {served_by}"
+            if served_by
+            else f"; model: {configured_model} (configured alias; the provider reported no serving model)"
+        )
     )
     # No silent truncation: if the imaging count exceeded the cap, say so
     # in the audit trail rather than quietly dropping the extras.

@@ -23,12 +23,13 @@ from pydicom.uid import ExplicitVRLittleEndian, generate_uid
 # calls load_dotenv() itself) ever runs.
 load_dotenv()
 
-from openai import APIConnectionError, AuthenticationError, BadRequestError
+from openai import APIConnectionError, AuthenticationError, BadRequestError, RateLimitError
 from pydantic import ValidationError
 
 from glassbox_md.agents.diagnostic_prediction import (
     CONFIDENCE_THRESHOLD,
     MAX_IMAGES_PER_CALL,
+    DailyQuotaExhausted,
     DifferentialCondition,
     ModelDifferentialResponse,
     _build_prompt,
@@ -154,6 +155,24 @@ def test_call_openrouter_retries_a_response_with_no_choices():
     assert client.chat.completions.call_count == 2
 
 
+def test_call_openrouter_does_not_retry_a_daily_quota_but_does_retry_a_per_minute_limit():
+    """Seen live: with a free-tier daily quota exhausted, every case burned
+    three attempts (each one more quota) before failing. A per-minute limit
+    clears in seconds and is worth the short retry; a per-day one is not."""
+    daily = RateLimitError("Rate limit exceeded: free-models-per-day", response=_fake_http_response(429), body=None)
+    client = _FakeClient([daily])
+    with pytest.raises(DailyQuotaExhausted, match="free-models-per-day"):
+        _call_openrouter(client, "openrouter/free", [{"role": "user", "content": "hi"}])
+    assert client.chat.completions.call_count == 1
+
+    per_minute = RateLimitError("Rate limit exceeded: too many requests per minute", response=_fake_http_response(429), body=None)
+    client = _FakeClient([per_minute, _fake_completion(_VALID_RESPONSE_JSON)])
+    assert isinstance(
+        _call_openrouter(client, "openrouter/free", [{"role": "user", "content": "hi"}]), ModelDifferentialResponse
+    )
+    assert client.chat.completions.call_count == 2
+
+
 def test_call_openrouter_retries_an_upstream_provider_rejection_but_not_other_400s():
     """OpenRouter relays a provider's rejection as 400 "Provider returned
     error" (3 of 24 live image requests). The router may pick a different
@@ -208,6 +227,12 @@ def test_agent_reports_the_serving_model_and_falls_back_to_the_configured_name(m
 
     assert with_served["diagnostic_prediction_result"]["model_name"] == "actual/served-model"
     assert without["diagnostic_prediction_result"]["model_name"] == "configured/alias"
+
+    # ...and in the audit trail, not only the result dict: the free router
+    # can answer with a different model every call
+    assert "model: actual/served-model" in with_served["audit_log"][0]["summary"]
+    without_summary = without["audit_log"][0]["summary"]
+    assert "model: configured/alias (configured alias; the provider reported no serving model)" in without_summary
 
 
 def test_call_openrouter_gives_up_after_repeated_malformed_responses():
@@ -467,6 +492,11 @@ def test_live_openrouter_call_smoke_test():
 
     result = diagnostic_prediction_agent(state)  # no llm_caller override -- hits the real API
 
+    message = str(result["stage_status"]["diagnostic_prediction"].get("message") or "")
+    if "per-day" in message.lower():
+        # An exhausted free-tier quota says nothing about whether the
+        # integration works; failing here would just be noise.
+        pytest.skip(f"provider's daily quota is exhausted: {message[:120]}")
     assert result["stage_status"]["diagnostic_prediction"]["status"] in ("ok", "needs_review")
     prediction = result["diagnostic_prediction_result"]
     assert isinstance(prediction["differential"], list)
