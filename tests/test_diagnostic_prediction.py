@@ -140,6 +140,43 @@ def test_call_openrouter_retries_a_malformed_response_then_succeeds():
     assert client.chat.completions.call_count == 2
 
 
+def test_call_openrouter_records_the_model_that_actually_served_the_request():
+    """`openrouter/free` is a router: the configured name doesn't say which
+    model answered, and an evaluation of the output is meaningless without
+    that. The provider's own `completion.model` is what gets recorded."""
+    completion = _fake_completion(_VALID_RESPONSE_JSON)
+    completion.model = "some-provider/some-vision-model:free"
+    client = _FakeClient([completion])
+
+    result = _call_openrouter(client, "openrouter/free", [{"role": "user", "content": "hi"}])
+
+    assert result._served_by == "some-provider/some-vision-model:free"
+
+
+def test_call_openrouter_leaves_served_by_unset_when_the_provider_does_not_report_it():
+    client = _FakeClient([_fake_completion(_VALID_RESPONSE_JSON)])  # no .model attribute
+
+    result = _call_openrouter(client, "openrouter/free", [{"role": "user", "content": "hi"}])
+
+    assert result._served_by is None
+
+
+def test_agent_reports_the_serving_model_and_falls_back_to_the_configured_name(monkeypatch):
+    monkeypatch.setenv("OPENROUTER_MODEL", "configured/alias")
+    state = _base_state(
+        structured_clinical_data={"history_text": "Patient has type 2 diabetes."},
+        rag_literature_context=[{"source_id": "1", "title": "t", "url": "u", "passage": "p"}],
+    )
+    served = _fake_response(confidence=0.8)
+    served._served_by = "actual/served-model"
+
+    with_served = diagnostic_prediction_agent(state, llm_caller=_CountingCaller(response=served))
+    without = diagnostic_prediction_agent(state, llm_caller=_CountingCaller(response=_fake_response(confidence=0.8)))
+
+    assert with_served["diagnostic_prediction_result"]["model_name"] == "actual/served-model"
+    assert without["diagnostic_prediction_result"]["model_name"] == "configured/alias"
+
+
 def test_call_openrouter_gives_up_after_repeated_malformed_responses():
     client = _FakeClient([_fake_completion("User Safety: safe") for _ in range(5)])
 

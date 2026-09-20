@@ -101,7 +101,7 @@ from pathlib import Path
 from typing import Any, Callable, TypedDict
 
 from openai import APIConnectionError, APITimeoutError, InternalServerError, OpenAI, RateLimitError
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field, PrivateAttr, ValidationError
 from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 
 from ..audit import audit_entry
@@ -188,6 +188,12 @@ class ModelDifferentialResponse(BaseModel):
     differential: list[DifferentialCondition]
     overall_confidence: float = Field(ge=0, le=1)
     reasoning_notes: str = Field(description="Free-text self-report of reasoning, not a mechanistic explanation")
+
+    # Not part of the schema asked of the model: the model OpenRouter's
+    # response says actually served the request. `openrouter/free` is a
+    # router, so the configured name says nothing about which model
+    # answered -- and that identity varies run to run.
+    _served_by: str | None = PrivateAttr(default=None)
 
 
 class DiagnosticPredictionResult(TypedDict):
@@ -309,7 +315,9 @@ def _call_openrouter(
     raw_content = completion.choices[0].message.content
     if not raw_content:
         raise ValueError("model returned an empty response")
-    return ModelDifferentialResponse.model_validate_json(raw_content)
+    response = ModelDifferentialResponse.model_validate_json(raw_content)
+    response._served_by = getattr(completion, "model", None) or None
+    return response
 
 
 def _default_caller(prompt: str, image_paths: list[str]) -> ModelDifferentialResponse:
@@ -407,7 +415,10 @@ def diagnostic_prediction_agent(
         "reasoning_notes": model_response.reasoning_notes,
         "abstained": abstained,
         "abstention_reason": "model confidence below threshold" if abstained else None,
-        "model_name": os.environ.get(MODEL_ENV_VAR, DEFAULT_MODEL_NAME),
+        # The model that actually answered when the provider reported it,
+        # else the configured name (which for a router is only an alias).
+        "model_name": getattr(model_response, "_served_by", None)
+        or os.environ.get(MODEL_ENV_VAR, DEFAULT_MODEL_NAME),
     }
 
     status = {
