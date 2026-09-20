@@ -19,8 +19,11 @@ persist_user_env = false
 # Set to true to show API keys as ***, false to show them as plain text
 mask_user_env = false
 
-# Authorized origins
-allow_origins = ["*"]
+# Authorized origins. Was ["*"], which lets any web page open in the same
+# browser talk to a locally running instance (and read saved cases via
+# "Browse past cases"). Loopback only by default; when deploying, replace
+# these with your real https origin -- see README "Deployment checklist".
+allow_origins = ["http://localhost:8000", "http://127.0.0.1:8000"]
 
 [features]
 # Process and display HTML in messages. This can be a security risk (see https://stackoverflow.com/questions/19603097/why-is-it-dangerous-to-render-user-generated-html-or-javascript)

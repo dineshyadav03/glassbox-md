@@ -29,7 +29,7 @@ pre-anonymization fields -- see case_store.py's own docstring for the
 full allow-list and why). `on_chat_start` now offers a choice --
 upload a new case, or browse recent past cases -- before falling
 through to the existing upload flow. Both the live and the
-reopened-past-case path render through the same `_build_report_markdown`
+reopened-past-case path render through the same `report_format.build_report_markdown`
 so there's exactly one place that knows how to format a report, not two
 copies that can drift.
 
@@ -44,7 +44,9 @@ the abstained case, where it's already just one clean sentence with
 nothing to tabulate. Confidence gets a color badge (🟢/🟡/🔴) using the
 same `CONFIDENCE_THRESHOLD` the backend abstention logic itself uses, so
 the visual cue can't drift out of sync with what "low confidence"
-actually means in this pipeline.
+actually means in this pipeline (see report_format.py, which also states
+where the model's reasoning and confidence are self-reported rather than
+verified).
 """
 
 from __future__ import annotations
@@ -59,14 +61,43 @@ sys.path.insert(0, str(Path(__file__).parent / "src"))
 import chainlit as cl
 from dotenv import load_dotenv
 
-from glassbox_md import case_store
-from glassbox_md.agents.diagnostic_prediction import CONFIDENCE_THRESHOLD
+from chainlit.config import config as chainlit_config
+from chainlit.server import app as chainlit_server_app
+
+from glassbox_md import auth, case_store
 from glassbox_md.case_store import CaseRecord
+from glassbox_md.origin_guard import OriginGuard
 from glassbox_md.disclaimer import INTENDED_USE_DISCLAIMER
 from glassbox_md.pipeline import build_pipeline_graph
+from glassbox_md.report_format import build_report_markdown
 from glassbox_md.state import new_stage_status
 
 load_dotenv()
+
+# Fails at startup, before anything is served, if the server is bound to a
+# non-loopback host without login or login is half-configured (see auth.py).
+_auth_settings = auth.enforce_deployment_safety()
+
+# Chainlit's `allow_origins` only reaches plain HTTP; its websocket (where all
+# real traffic goes) accepted any Origin -- verified against a running
+# instance. This closes that for both, using the same allow-list. Login is
+# still the actual access control (see origin_guard.py).
+chainlit_server_app.add_middleware(OriginGuard, allowed_origins=chainlit_config.project.allow_origins)
+
+if _auth_settings.enabled:
+
+    @cl.password_auth_callback
+    def _authenticate(username: str, password: str) -> cl.User | None:
+        if auth.check_credentials(username, password, _auth_settings):
+            return cl.User(identifier=username)
+        return None
+
+else:
+    print(
+        "WARNING: login is not configured, so this app is open to anyone who can reach it. That is "
+        "acceptable only bound to 127.0.0.1 (the default). See README 'Deployment checklist'.",
+        file=sys.stderr,
+    )
 
 STAGE_TITLES = {
     "document_parser": "1 · Document Parser",
@@ -74,24 +105,9 @@ STAGE_TITLES = {
     "data_preparation": "3 · Data Preparation",
     "medical_knowledge_rag": "4 · Medical Knowledge RAG",
     "diagnostic_prediction": "5 · Diagnostic Prediction",
-    "explainability": "6 · Explainability",
+    "explainability": "6 · Report Assembly",
 }
 STATUS_ICONS = {"ok": "✅", "needs_review": "⚠️", "failed": "❌"}
-
-# The upper band is a UI-only judgment call (nothing in the backend treats
-# 0.7 as meaningful) -- the lower band is not: it's the exact threshold
-# diagnostic_prediction.py uses to decide abstention, imported rather than
-# duplicated as a literal so this badge can never silently drift out of
-# sync with what "low confidence" actually triggers.
-_CONFIDENCE_HIGH_BAND = 0.7
-
-
-def _confidence_badge(confidence: float) -> str:
-    if confidence < CONFIDENCE_THRESHOLD:
-        return "🔴"
-    if confidence < _CONFIDENCE_HIGH_BAND:
-        return "🟡"
-    return "🟢"
 
 # Built once at import time -- both llm_caller and rag_collection default
 # to None, which resolves to the real OpenRouter call and the real
@@ -271,67 +287,13 @@ async def _render_stage_step(stage_name: str, update: dict[str, Any]) -> None:
         step.output = output
 
 
-def _build_report_markdown(report: dict[str, Any], prediction: dict[str, Any]) -> str:
-    """Pure formatting -- no `cl` calls -- so both a freshly-completed
-    pipeline run and a reopened past case (see case_store.py) render
-    through this exact same logic instead of two copies that can drift."""
-    lines: list[str] = []
-
-    if prediction.get("abstained") and not prediction.get("differential"):
-        # Nothing to tabulate -- the narrative is already just one clean
-        # sentence for this case (see module docstring).
-        lines.append(report["narrative"])
-    else:
-        lines.append("### Ranked differential")
-        lines.append("")
-        lines.append("| | Condition | Likelihood | Supporting evidence |")
-        lines.append("|---|---|---|---|")
-        differential = sorted(
-            prediction.get("differential", []), key=lambda c: c["likelihood"], reverse=True
-        )
-        for condition in differential:
-            evidence = "; ".join(condition.get("supporting_evidence", [])) or "(none given)"
-            lines.append(
-                f"| {_confidence_badge(condition['likelihood'])} "
-                f"| {condition['condition']} "
-                f"| {condition['likelihood']:.2f} "
-                f"| {evidence} |"
-            )
-        reasoning_notes = prediction.get("reasoning_notes")
-        if reasoning_notes:
-            lines.append("")
-            lines.append(f"**Model's self-reported reasoning:** {reasoning_notes}")
-
-    lines.append("")
-    lines.append(f"**Overall confidence:** {_confidence_badge(report['confidence'])} {report['confidence']:.2f}")
-
-    if report["citations"]:
-        lines.append("")
-        lines.append("**Cited literature:**")
-        for citation in report["citations"]:
-            lines.append(f"- [{citation['title']}]({citation['url']})")
-
-    if report["shap_reference"]:
-        lines.append("")
-        lines.append(f"**SHAP demo (public data, not this case):** {report['shap_reference']}")
-
-    if report["disagreement_flagged"]:
-        lines.append("")
-        lines.append(
-            "⚠️ **Flagged for review** -- low confidence and/or a close "
-            "differential. Treat as inconclusive, not a settled result."
-        )
-
-    return "\n".join(lines)
-
-
 async def _render_report(report: dict[str, Any], prediction: dict[str, Any], *, confirmed: bool) -> None:
     """Send the report, with the right action: a live Confirm button for
     an unconfirmed case, or a static notice for one that's already
     confirmed -- confirmation is one immutable fact, not a re-clickable
     toggle (see case_store.confirm_case's idempotency for the DB-level
     half of that same rule)."""
-    content = _build_report_markdown(report, prediction)
+    content = build_report_markdown(report, prediction)
     if confirmed:
         await cl.Message(content=content).send()
         await cl.Message(content="✅ Already confirmed reviewed by clinician.").send()
