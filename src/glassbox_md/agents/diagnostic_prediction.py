@@ -100,7 +100,14 @@ import os
 from pathlib import Path
 from typing import Any, Callable, TypedDict
 
-from openai import APIConnectionError, APITimeoutError, InternalServerError, OpenAI, RateLimitError
+from openai import (
+    APIConnectionError,
+    APITimeoutError,
+    BadRequestError,
+    InternalServerError,
+    OpenAI,
+    RateLimitError,
+)
 from pydantic import BaseModel, Field, PrivateAttr, ValidationError
 from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 
@@ -305,13 +312,29 @@ def _call_openrouter(
     caller sees the original exception type after retries are exhausted,
     not a tenacity wrapper.
     """
-    completion = client.chat.completions.create(
-        model=model_name,
-        messages=messages,
-        response_format={"type": "json_object"},
-        temperature=0.2,
-        timeout=REQUEST_TIMEOUT_SECONDS,
-    )
+    try:
+        completion = client.chat.completions.create(
+            model=model_name,
+            messages=messages,
+            response_format={"type": "json_object"},
+            temperature=0.2,
+            timeout=REQUEST_TIMEOUT_SECONDS,
+        )
+    except BadRequestError as exc:
+        # OpenRouter relays an upstream provider's rejection as a 400 with
+        # "Provider returned error" (seen live: 3 of 24 image requests, an
+        # INVALID_REQUEST_BODY from whichever provider the router picked).
+        # The next attempt can land on a different provider, so retry that
+        # -- but only that: a 400 that is OpenRouter's own verdict on the
+        # request is a real bug retrying can't fix.
+        if "Provider returned error" in str(exc):
+            raise ValueError(f"upstream provider rejected the request: {exc}") from exc
+        raise
+    # A 200 whose body is an upstream error carries `choices: null`; indexing
+    # it raised TypeError, which is not retryable, so a transient provider
+    # failure (2 of 24 live cases) failed the whole case on the first try.
+    if not getattr(completion, "choices", None):
+        raise ValueError("provider returned no choices (upstream error)")
     raw_content = completion.choices[0].message.content
     if not raw_content:
         raise ValueError("model returned an empty response")

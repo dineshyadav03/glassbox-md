@@ -23,7 +23,7 @@ from pydicom.uid import ExplicitVRLittleEndian, generate_uid
 # calls load_dotenv() itself) ever runs.
 load_dotenv()
 
-from openai import APIConnectionError, AuthenticationError
+from openai import APIConnectionError, AuthenticationError, BadRequestError
 from pydantic import ValidationError
 
 from glassbox_md.agents.diagnostic_prediction import (
@@ -138,6 +138,39 @@ def test_call_openrouter_retries_a_malformed_response_then_succeeds():
 
     assert isinstance(result, ModelDifferentialResponse)
     assert client.chat.completions.call_count == 2
+
+
+def test_call_openrouter_retries_a_response_with_no_choices():
+    """Seen live (2 of 24 image requests): a 200 whose body is an upstream
+    error has `choices: null`. Indexing it raised TypeError, which is not
+    retryable, so the case failed on the first attempt instead of retrying."""
+    from types import SimpleNamespace
+
+    client = _FakeClient([SimpleNamespace(choices=None), _fake_completion(_VALID_RESPONSE_JSON)])
+
+    result = _call_openrouter(client, "openrouter/free", [{"role": "user", "content": "hi"}])
+
+    assert isinstance(result, ModelDifferentialResponse)
+    assert client.chat.completions.call_count == 2
+
+
+def test_call_openrouter_retries_an_upstream_provider_rejection_but_not_other_400s():
+    """OpenRouter relays a provider's rejection as 400 "Provider returned
+    error" (3 of 24 live image requests). The router may pick a different
+    provider next time, so that one is retried; a 400 that is OpenRouter's
+    own verdict on the request is not."""
+    upstream = BadRequestError("Provider returned error", response=_fake_http_response(400), body=None)
+    client = _FakeClient([upstream, _fake_completion(_VALID_RESPONSE_JSON)])
+    assert isinstance(
+        _call_openrouter(client, "openrouter/free", [{"role": "user", "content": "hi"}]), ModelDifferentialResponse
+    )
+    assert client.chat.completions.call_count == 2
+
+    own_error = BadRequestError("messages: field required", response=_fake_http_response(400), body=None)
+    client = _FakeClient([own_error])
+    with pytest.raises(BadRequestError):
+        _call_openrouter(client, "openrouter/free", [{"role": "user", "content": "hi"}])
+    assert client.chat.completions.call_count == 1
 
 
 def test_call_openrouter_records_the_model_that_actually_served_the_request():
