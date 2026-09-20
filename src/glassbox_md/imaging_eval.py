@@ -445,9 +445,21 @@ def evaluate_row(
 
 # --- results file ------------------------------------------------------------
 
+_ACCOUNT_ID = re.compile(r"""(['"]user_id['"]\s*:\s*['"])[^'"]*(['"])""")
+
+
+def scrub_error_text(text: str) -> str:
+    """Redact the provider account id that OpenRouter error bodies carry
+    (`'user_id': 'user_...'`). The results file is meant to be committed,
+    and an account identifier has no business in a public repo."""
+    return _ACCOUNT_ID.sub(r"\1<redacted>\2", text)
+
+
 def append_result(path: str | Path, record: Record) -> None:
     """Append one record and flush immediately, so an interrupted run
     keeps everything finished so far."""
+    if record.get("error"):
+        record = {**record, "error": scrub_error_text(record["error"])}
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     # An interrupted write can leave a final line with no newline; without
@@ -587,6 +599,42 @@ def _share(flags: list[bool | None]) -> float | None:
     return sum(known) / len(known) if known else None
 
 
+def _top1_block(records: list[Record]) -> dict[str, Any]:
+    """Top-1 accuracy-style metrics over exactly the records given."""
+    categories = [(r, categorize_condition(r.get("top1_condition"))) for r in records]
+    correct = [r for r, category in categories if _is_correct(r["true_label"], category)]
+    incorrect = [r for r, category in categories if not _is_correct(r["true_label"], category)]
+    confusion = {label: {"pneumonia": 0, "normal": 0, "other": 0} for label in LABEL_NAMES.values()}
+    for record, category in categories:
+        if record["true_label"] in confusion:
+            confusion[record["true_label"]][category] += 1
+    pneumonia_rows = [r for r in records if r["true_label"] == "PNEUMONIA"]
+    normal_rows = [r for r in records if r["true_label"] == "NORMAL"]
+    pneumonia_hits = confusion["PNEUMONIA"]["pneumonia"]
+    normal_hits = confusion["NORMAL"]["normal"]
+    top3_hits = sum(pneumonia_in_top3(r) for r in pneumonia_rows)
+    return {
+        "n": len(records),
+        "n_correct": len(correct),
+        "accuracy": _rate(len(correct), len(records)),
+        "accuracy_ci95": _ci(len(correct), len(records)),
+        "n_pneumonia": len(pneumonia_rows),
+        "n_pneumonia_hit": pneumonia_hits,
+        "sensitivity": _rate(pneumonia_hits, len(pneumonia_rows)),
+        "sensitivity_ci95": _ci(pneumonia_hits, len(pneumonia_rows)),
+        "n_pneumonia_top3_hit": top3_hits,
+        "top3_sensitivity": _rate(top3_hits, len(pneumonia_rows)),
+        "top3_sensitivity_ci95": _ci(top3_hits, len(pneumonia_rows)),
+        "n_normal": len(normal_rows),
+        "n_normal_hit": normal_hits,
+        "specificity": _rate(normal_hits, len(normal_rows)),
+        "specificity_ci95": _ci(normal_hits, len(normal_rows)),
+        "confusion": confusion,
+        "mean_confidence_correct": _mean([r["overall_confidence"] for r in correct if r.get("overall_confidence") is not None]),
+        "mean_confidence_incorrect": _mean([r["overall_confidence"] for r in incorrect if r.get("overall_confidence") is not None]),
+    }
+
+
 def summarize(results: list[Record]) -> dict[str, Any]:
     """Score a list of records (one per row_idx, as `load_results` gives).
 
@@ -635,6 +683,18 @@ def summarize(results: list[Record]) -> dict[str, Any]:
         "n_errored": len(errored),
         "n_abstained": len(abstained),
         "n_scored": len(scored),
+        "n_completed": len(completed),
+        "abstention_rate": _rate(len(abstained), len(completed)),
+        "abstention_rate_ci95": _ci(len(abstained), len(completed)),
+        # The same top-1 metrics over EVERY case that produced an answer,
+        # abstained or not. The app still shows an abstained case's ranked
+        # differential (flagged as inconclusive), so this is "what the
+        # model's top-1 says" -- the committed-only figures below are what
+        # survives if abstention is respected. Neither view alone is the
+        # honest picture: abstaining on most cases flatters the second, and
+        # ignoring the model's own low confidence flatters the first.
+        "ignoring_abstention": _top1_block(completed),
+        "committed": _top1_block(scored),
         "coverage": _rate(len(scored), len(results)),
         "by_true_label": by_true_label,
         "n_correct": len(correct),
@@ -720,20 +780,46 @@ def render_markdown(summary: dict[str, Any], results_meta: dict[str, Any] | None
         "",
     ]
 
-    if s["n_scored"] == 0:
-        lines += ["## Results", "", "No scored cases yet (every case errored or abstained).", ""]
-    else:
-        lines += [
-            "## Results (scored cases only)",
-            "",
+    def metric_table(block: dict[str, Any]) -> list[str]:
+        return [
             "| Metric | Value | 95% CI (Wilson) | Count |",
             "|---|---|---|---|",
-            f"| Accuracy | {_pct(s['accuracy'])} | {_interval(s['accuracy_ci95'])} | {s['n_correct']} / {s['n_scored']} |",
-            f"| Sensitivity (PNEUMONIA rows, top-1 pneumonia) | {_pct(s['sensitivity'])} | {_interval(s['sensitivity_ci95'])} | {s['n_pneumonia_hit']} / {s['n_pneumonia_scored']} |",
-            f"| Specificity (NORMAL rows, top-1 normal) | {_pct(s['specificity'])} | {_interval(s['specificity_ci95'])} | {s['n_normal_hit']} / {s['n_normal_scored']} |",
-            f"| Top-3 sensitivity (pneumonia anywhere in top 3) | {_pct(s['top3_sensitivity'])} | {_interval(s['top3_sensitivity_ci95'])} | {s['n_pneumonia_top3_hit']} / {s['n_pneumonia_scored']} |",
+            f"| Accuracy | {_pct(block['accuracy'])} | {_interval(block['accuracy_ci95'])} | {block['n_correct']} / {block['n']} |",
+            f"| Sensitivity (PNEUMONIA rows, top-1 pneumonia) | {_pct(block['sensitivity'])} | {_interval(block['sensitivity_ci95'])} | {block['n_pneumonia_hit']} / {block['n_pneumonia']} |",
+            f"| Specificity (NORMAL rows, top-1 normal) | {_pct(block['specificity'])} | {_interval(block['specificity_ci95'])} | {block['n_normal_hit']} / {block['n_normal']} |",
+            f"| Top-3 sensitivity (pneumonia anywhere in top 3) | {_pct(block['top3_sensitivity'])} | {_interval(block['top3_sensitivity_ci95'])} | {block['n_pneumonia_top3_hit']} / {block['n_pneumonia']} |",
+        ]
+
+    if s["n_completed"] == 0:
+        lines += ["## Results", "", "No completed cases yet (every case errored).", ""]
+    else:
+        lines += [
+            "## Headline: what the model's top-1 says, regardless of abstention",
             "",
-            f"Counting every errored or abstained case as wrong, accuracy is {_pct(s['accuracy_all_cases'])} over all {s['n']} cases.",
+            f"Every case that produced an answer (n = {s['n_completed']}). The app still shows an abstained "
+            "case's ranked differential, flagged as inconclusive, so this is the model's own top-1 call.",
+            "",
+            *metric_table(s["ignoring_abstention"]),
+            "",
+            f"The pipeline abstained (overall confidence below its threshold) on {s['n_abstained']} of "
+            f"{s['n_completed']} answered cases: {_pct(s['abstention_rate'])}, 95% CI {_interval(s['abstention_rate_ci95'])}.",
+            "",
+            f"## If abstention is respected: committed cases only (n = {s['n_scored']})",
+            "",
+        ]
+        if s["n_scored"] == 0:
+            lines += ["Every answered case was abstained, so nothing was committed.", ""]
+        else:
+            lines += [
+                *metric_table(s["committed"]),
+                "",
+                "Neither view alone is the honest picture: abstaining on most cases can flatter this one, "
+                "while ignoring the model's own low confidence flatters the headline.",
+                "",
+            ]
+        lines += [
+            f"Counting every errored or abstained case as wrong, accuracy is {_pct(s['accuracy_all_cases'])} "
+            f"over all {s['n']} cases.",
             "",
         ]
 
@@ -775,7 +861,7 @@ def render_markdown(summary: dict[str, Any], results_meta: dict[str, Any] | None
         "",
         "- Single dataset: one set of pediatric chest X-rays (ages 1-5, one hospital). Nothing here says how the pipeline behaves on adults, other scanners, or any other condition.",
         "- Small, class-balanced sample, not the split's natural mix. Accuracy is not a deployment-prevalence estimate, and at this size the intervals above are wide, so small differences between runs or models should not be read as real.",
-        "- Free-tier model identity varies run to run. The default `openrouter/free` is a router that can pick a different model on every call, and only the router name is recorded, so a re-run can legitimately give a different result.",
+        "- Free-tier model identity varies run to run. The default `openrouter/free` is a router that can pick a different model on every call (the model that actually served each case is recorded above), so this is a measurement of a moving mix of models, and a re-run can legitimately give a different result.",
         "- The pipeline sends the image alone: these cases have no labs, history or retrieved literature, so the model is judging the picture with an empty text prompt.",
         "- The PNEUMONIA label pools bacterial and viral cases. Scoring is binary against the dataset label; a top-1 that is neither pneumonia nor normal counts as a miss for both classes.",
         "- Free-text condition names are mapped to categories by a keyword heuristic (`categorize_condition`). The raw strings are kept in the results file so anything it misjudges can be audited.",

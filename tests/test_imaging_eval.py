@@ -270,7 +270,48 @@ def test_summarize_with_nothing_scored_does_not_divide_by_zero():
     assert s["mean_confidence_correct"] is None
     assert s["accuracy_all_cases"] == 0.0
 
-    assert "No scored cases yet" in render_markdown(s, collect_meta([]))
+    report = render_markdown(s, collect_meta([]))
+    # the one abstained case still has a top-1, so the headline view exists;
+    # only the committed-only view is empty
+    assert "Headline: what the model's top-1 says" in report
+    assert "Every answered case was abstained, so nothing was committed." in report
+
+
+def test_summarize_reports_abstention_and_a_view_that_ignores_it():
+    """The situation the two views exist for, seen in the first real run: most
+    image-only cases abstain, so the committed-only view rests on a handful
+    of cases while the model's own top-1 is judged on all of them."""
+    results = [
+        _rec(1, "NORMAL", "Normal chest", 0.2, abstained=True),
+        _rec(2, "NORMAL", "Community-acquired pneumonia", 0.2, abstained=True),
+        _rec(3, "PNEUMONIA", "Pneumonia", 0.3, abstained=True),
+        _rec(4, "PNEUMONIA", "Congenital heart disease", 0.3, abstained=True),
+        _rec(5, "NORMAL", "Normal chest", 0.8),
+        _rec(6, "PNEUMONIA", None, None, error="boom"),
+    ]
+
+    s = summarize(results)
+
+    assert (s["n"], s["n_completed"], s["n_abstained"], s["n_scored"], s["n_errored"]) == (6, 5, 4, 1, 1)
+    assert s["abstention_rate"] == pytest.approx(4 / 5)
+    assert s["abstention_rate_ci95"] == pytest.approx(wilson_interval(4, 5))
+    # committed-only: the single non-abstained case
+    assert s["committed"]["n"] == 1 and s["committed"]["n_correct"] == 1
+    assert s["accuracy"] == 1.0
+    # ignoring abstention: 5 answered cases; rows 1, 3, 5 are correct
+    ia = s["ignoring_abstention"]
+    assert ia["n"] == 5 and ia["n_correct"] == 3
+    assert ia["accuracy"] == pytest.approx(3 / 5)
+    assert (ia["n_normal"], ia["n_normal_hit"]) == (3, 2)
+    assert (ia["n_pneumonia"], ia["n_pneumonia_hit"]) == (2, 1)
+    # the pessimistic companion counts every abstained AND errored case as
+    # wrong: only the one committed, correct case survives -> 1 of 6
+    assert s["accuracy_all_cases"] == pytest.approx(1 / 6)
+
+    report = render_markdown(s, collect_meta([]))
+    assert "abstained (overall confidence below its threshold) on 4 of 5 answered cases" in report
+    assert "Neither view alone is the honest picture" in report
+    json.dumps(s)  # both views stay JSON-serializable
 
 
 def test_summarize_rescores_from_raw_strings_so_categorizer_fixes_apply_retroactively():
@@ -735,6 +776,20 @@ def test_a_write_cut_off_inside_a_multibyte_character_is_skipped_not_fatal(tmp_p
     assert "skipping unparseable line" in caplog.text
     imaging_eval.append_result(out, _rec(3, "PNEUMONIA", "Pneumonia", 0.8))  # next append is not glued on
     assert [r["row_idx"] for r in load_results(out)] == [1, 3]
+
+
+def test_provider_account_ids_are_scrubbed_before_a_record_reaches_the_results_file(tmp_path):
+    """OpenRouter error bodies carry the caller's account id. The results
+    file is committed, so it must never be written there."""
+    out = tmp_path / "results.jsonl"
+    record = _rec(1, "NORMAL", None, None, error="model call failed: {'error': {'code': 400}, 'user_id': 'user_3JDzXsmC3bJ'}")
+
+    imaging_eval.append_result(out, record)
+
+    written = out.read_text(encoding="utf-8")
+    assert "user_3JDzXsmC3bJ" not in written
+    assert "'user_id': '<redacted>'" in written
+    assert record["error"].count("user_3JDzXsmC3bJ") == 1  # the caller's record is not mutated
 
 
 def test_resume_refuses_a_different_seed_instead_of_pooling_two_samples(tmp_path):
