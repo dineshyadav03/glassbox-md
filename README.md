@@ -3,16 +3,20 @@
 [![GitHub repo](https://img.shields.io/badge/GitHub-dineshyadav03%2Fglassbox--md-181717?logo=github)](https://github.com/dineshyadav03/glassbox-md)
 [![CI](https://github.com/dineshyadav03/glassbox-md/actions/workflows/ci.yml/badge.svg)](https://github.com/dineshyadav03/glassbox-md/actions/workflows/ci.yml)
 
-An explainable medical AI agent pipeline: six agents that turn imaging,
-labs, and symptoms into a ranked differential a clinician can actually
-audit, not just trust.
+A medical AI agent pipeline with an audit trail: six agents that turn
+imaging, labs, and symptoms into a ranked differential, with each step
+shown. The reasoning it shows is the model's own account of itself, not a
+verified explanation of how it reached the answer -- see
+[What "explainable" means here](#what-explainable-means-here-and-what-it-doesnt).
 
-> **Educational / portfolio demonstration of a multi-agent explainable-AI
-> architecture. Not an FDA-cleared or clinically validated medical device.
+> **Educational / portfolio demonstration of a multi-agent medical-AI
+> pipeline. Not an FDA-cleared or clinically validated medical device.
 > Not validated for diagnostic accuracy. Must not be used with real patient
 > data (PHI) or to inform actual clinical decisions. All outputs are
 > illustrative only, not medical advice, and require qualified clinician
-> review before any action.**
+> review before any action. The reasoning shown is the model's own account
+> of itself and has not been verified as a faithful explanation of how the
+> answer was reached.**
 >
 > See [`src/glassbox_md/disclaimer.py`](src/glassbox_md/disclaimer.py) --
 > this text is defined once there and reused everywhere it needs to appear.
@@ -22,13 +26,58 @@ audit, not just trust.
 The pitch this project is built from opens with a problem, not a feature
 list: *"They can't just trust a 'black box' algorithm. They need to know
 why a decision is made."* Six agents (parse → de-identify → normalize →
-retrieve literature → predict → explain) exist to answer that, in order.
+retrieve literature → predict → report) exist to answer that, in order --
+and the next section is honest about how far they get.
 
 The full project brief -- research grounding in two cited papers, a
 five-lens architecture critique, the revised design, risk table, and
 roadmap this scaffold is built from -- lives in the published project
 artifact (link in your conversation history). This README covers the code,
 not the reasoning behind it.
+
+## What "explainable" means here, and what it doesn't
+
+The name and the pitch promise a glass box. What the project delivers is
+narrower, and it is worth being exact about which parts are real.
+
+**Real and checkable.**
+- An audit trail: each stage records what it did (`audit_log`), including
+  which model answered, how many images were sent, and what was redacted
+  (counts only, never the values).
+- Provenance you can follow: a runtime check stops the original upload
+  paths (which can embed a patient's name) from being carried past the
+  Privacy stage -- that is all it checks; what the redactor itself misses
+  is listed under Known limitations. The retrieved literature is real
+  PubMed records with checkable URLs, and the "flagged for review" signal
+  is computed from the model's own top-two margin and abstention threshold.
+- Abstention: a low-confidence answer is flagged as inconclusive instead of
+  being presented as a result.
+
+**Not a faithful explanation.**
+- *The reasoning is the model's account of itself.* `reasoning_notes` and
+  each condition's `supporting_evidence` are text the model wrote. A hosted
+  closed model exposes no internals, and a fluent rationale is not evidence
+  of how the answer was reached. This project's own evaluation shows why
+  that matters: on real chest X-rays the model gave confident, specific,
+  wrong rationales (a "central venous line" that was a clip, a committed
+  "cleidocranial dysplasia" on a normal film), and its stated confidence
+  was no higher on correct answers than on incorrect ones.
+- *Citations are retrieved, not verified.* The literature is real, but
+  nothing checks that a paper supports the claim it sits next to.
+- *The SHAP demo is not about the case.* It explains a random forest
+  trained on scikit-learn's public diabetes dataset, to show the technique.
+  It says nothing about why the model answered this patient the way it did,
+  and the report labels it "not about this case". It is not case-level
+  explainability.
+
+**What would earn the word.** None of these exist yet: (1) a case-level
+attribution against a model this project can actually inspect, such as a
+small interpretable model trained on its own lab panel, reported alongside
+the LLM's answer rather than instead of it; (2) perturbation tests on the
+real call for a given case (change or remove one lab value or image region
+and see whether the differential moves, a behavioural check on whether the
+stated evidence matters); (3) an automated check that a cited passage
+actually supports the claim it is attached to.
 
 ## Architecture
 
@@ -44,7 +93,7 @@ flowchart TD
     P4 -->|failed| END4(("halt"))
     P4 --> P5["5 · Diagnostic Prediction<br/>OpenRouter (openrouter/free)"]
     P5 -->|failed| END5(("halt"))
-    P5 --> P6["6 · Explainability<br/>citations + real SHAP demo"]
+    P5 --> P6["6 · Report Assembly<br/>self-reported reasoning + citations<br/>(separate SHAP demo, not about the case)"]
     P6 --> OUT["Final report + Confirm action (Chainlit)"]
 ```
 
@@ -65,8 +114,9 @@ PII coverage, and expanding from 2 to 6 target conditions, all below)
 closing gaps the project's own architecture critique and its own "Known
 limitations" section named from the start. All six agents, wired into
 one pipeline, with a working UI, validated across a spread of synthetic
-cases. 384 automated tests passing (run on every push by CI, on Python
-3.11 and 3.13), plus two things pytest can't check by itself: a live
+cases. An offline pytest suite (a few hundred tests; `pytest --collect-only -q`
+prints the exact count) runs on every push in CI, on Python 3.11 and 3.13
+-- see the badge above. Two things pytest can't check by itself: a live
 OpenRouter call (Phase 5) and full manual runs of the UI in a real browser
 (Phase 8, revisited below) -- see both below.
 
@@ -77,9 +127,9 @@ new code.** Infrastructure: GitHub Actions runs the full suite on Python
 `requirements.lock.txt` (verified by building a brand-new environment
 from it), a weekly `pip-audit` workflow covers the lock file, and
 Dependabot tracks GitHub Actions versions (its pip mode was tried and
-removed: it broke the compiled lock, and the locked CI jobs caught it). The audit found a real advisory set in
-`cryptography` (now floored at 50, fixed upstream) and undeclared use of
-Pillow (now declared). Setting up CI also exposed a wrong claim that had
+removed: it broke the compiled lock, and the locked CI jobs caught it).
+The audit found a real advisory set in `cryptography` (now floored at 50,
+fixed upstream) and undeclared use of Pillow (now declared). Setting up CI also exposed a wrong claim that had
 survived from Phase 3: the docs said the PII agent uses `en_core_web_sm`,
 but Presidio's default engine loads `_lg` -- the tests only passed
 because Presidio silently downloads a missing model, and a pip-less
@@ -102,6 +152,31 @@ spaces that let a serial through unredacted, UDIs redacted only through
 their first group, negation that scored "No pleural effusion,
 pneumothorax, or pneumonia" as a pneumonia call. All fixed and turned into
 regression tests.
+
+**Deployment-readiness pass: what a reviewer would flag first.**
+Chainlit is pinned to 2.x (`>=2.12,<3`; the app uses the 2.x API) and the
+Python 3.11+ requirement is stated in Setup. A tracked
+`.claude/launch.json` held an absolute path under a personal home
+directory; it is untracked and gitignored (it remains in git history --
+history was not rewritten). CI gained a check that `requirements.lock.txt`
+still matches `requirements.txt`, so editing one without the other fails.
+The resolved model is now logged in each case's audit trail and shown in
+the report ("Answered by"), not only the `openrouter/free` alias. The
+explanation is no longer presented as more than it is: the report labels
+the reasoning "self-reported", the confidence "not calibrated", the
+citations "retrieved, not verified", and the SHAP demo "not about this
+case" in a separate footer, and the README has a section on what
+"explainable" does and does not mean here. Access control: opt-in login
+with a salted PBKDF2 hash, and a startup gate that refuses to serve on a
+non-loopback host without it. The finding worth recording: tightening
+Chainlit's `allow_origins` (which was `["*"]`) is not enough, because that
+setting only covers plain HTTP -- a websocket handshake carrying
+`Origin: http://evil.example` was accepted by a running instance and got a
+live session, so any web page open in the same browser could drive a local
+copy and read its saved cases. `OriginGuard` closes that for HTTP and
+websocket, verified against the running server before and after. The app
+is still not deployment-ready; see the Deployment checklist for what
+exists and what doesn't.
 
 **Condition coverage V2: 2 -> 6 target conditions, and a real finding
 that reframed what "scoped to N conditions" even means.** Research
@@ -290,6 +365,9 @@ healthcare/
 │   ├── audit.py                shared helper for building audit log entries
 │   ├── disclaimer.py          the intended-use disclaimer, defined once
 │   ├── case_store.py          local SQLite persistence for completed cases (done)
+│   ├── report_format.py       the report's Markdown, with the honesty labels (self-reported, not calibrated, ...)
+│   ├── auth.py                opt-in login (salted PBKDF2) + refuse-to-serve-unprotected startup gate
+│   ├── origin_guard.py        ASGI middleware: rejects cross-origin HTTP and websocket requests
 │   ├── pipeline.py             wires all six agents into one LangGraph StateGraph (done)
 │   ├── imaging_eval.py         real-image evaluation: sampling, scoring, Wilson CIs, report (done)
 │   └── agents/
@@ -299,7 +377,7 @@ healthcare/
 │       ├── medical_knowledge_rag.py PubMed fetch + ChromaDB index/query (done)
 │       ├── controlled_vocabulary.py canonical term -> real MeSH Descriptor UI map (done)
 │       ├── diagnostic_prediction.py Structured differential via OpenRouter (done)
-│       └── explainability.py       Citation-grounded narrative + real SHAP demo (done)
+│       └── explainability.py       Report assembly: model's self-reported reasoning + retrieved citations; separate SHAP demo (done)
 ├── scripts/
 │   ├── build_literature_index.py  offline: fetch PubMed, build the RAG index
 │   └── eval_imaging.py            slow, networked: run + report the real-image evaluation
@@ -321,6 +399,10 @@ healthcare/
 ```
 
 ## Setup
+
+**Requires Python 3.11 or newer** (`requires-python = ">=3.11"`; CI covers
+3.11 and 3.13, and 3.14 is untested) and Chainlit 2.x (`requirements.txt`
+pins `>=2.12,<3`; the app uses the 2.x API and will not run on 1.x).
 
 ```bash
 python -m venv .venv
@@ -369,12 +451,59 @@ chainlit run app.py -w
 Upload a lab-report/history PDF and/or a DICOM file to run it through
 the pipeline; each agent renders as its own step as it completes.
 
+## Deployment checklist
+
+This is a local, single-operator demo. It is **not** ready to be exposed to
+a network as-is. What exists, and what doesn't:
+
+**In the code.**
+- *Bind address:* it serves on `127.0.0.1` by default and **refuses to
+  start** on any other host unless login is configured (`auth.py`).
+- *Login (opt-in):* set `GLASSBOX_AUTH_USERNAME`, a salted PBKDF2 hash from
+  `python -m glassbox_md.auth hash` in `GLASSBOX_AUTH_PASSWORD_HASH`
+  (single-quoted; it contains `$`), and `CHAINLIT_AUTH_SECRET` from
+  `chainlit create-secret`. Half-configured login (one variable, a
+  malformed or weak hash, no secret) also refuses to start rather than
+  silently running open.
+- *Origin checks:* Chainlit's `allow_origins` does not cover its websocket,
+  so `origin_guard.py` rejects any cross-origin browser request, HTTP or
+  websocket, that is neither same-origin nor in `allow_origins`. The
+  default list is loopback only; for a deployed hostname, replace it in
+  `.chainlit/config.toml` with your real `https://` origin.
+- HTML rendering in messages is off, and user environment variables are not
+  persisted.
+
+**Not done -- needed before any real deployment.**
+- TLS and rate limiting/lockout: put a reverse proxy in front. Login has no
+  lockout beyond PBKDF2's own cost.
+- One shared credential. There are no per-user accounts, and saved cases
+  are not per-user: anyone who can log in sees every case.
+- Saved cases (`data/cases/cases.db`) and Chainlit's uploaded files
+  (`.files/`) sit unencrypted on disk.
+- Third-party data flow: the redacted text **and the DICOM pixel data** go
+  to OpenRouter and whichever provider its router picks, with no BAA.
+  Redaction covers text and DICOM metadata, not image pixels. This is why
+  the disclaimer forbids real patient data.
+- Free-tier quotas: OpenRouter's free models allow 50 requests a day, which
+  the imaging evaluation exhausted in one sitting.
+
 ## Known limitations
 
 Scoped deliberately, not accidentally -- each of these is discussed in
 more depth under Design decisions below, but a portfolio reviewer
 shouldn't have to read thirty bullet points to find the honest gaps:
 
+- **The "explanation" is mostly the model explaining itself, and the SHAP
+  demo is not about the case.** The reasoning and each condition's
+  supporting evidence are text the model wrote; the citations are retrieved
+  but not verified to support the claim beside them; and the SHAP figures
+  come from a random forest trained on a public dataset, not from the case.
+  None of it is faithful, case-level explainability, and the report labels
+  each piece accordingly. See "What 'explainable' means here" for what
+  would be needed.
+- **Not deployment-ready.** Login is opt-in and single-credential, there is
+  no per-user isolation of saved cases, and image pixels leave the machine
+  for a third-party router; see the Deployment checklist.
 - **Six conditions only** (type 2 diabetes, coronary artery disease,
   hyperlipidemia, hypertension, chronic kidney disease, hypothyroidism),
   not general medicine. Only an unrecognized *lab test* is actually
@@ -692,16 +821,19 @@ shouldn't have to read thirty bullet points to find the honest gaps:
   MVP conditions (type 2 diabetes, coronary artery disease) are primarily
   lab/history-driven rather than imaging-diagnosed.
 - **The Explainability Agent's SHAP demo is deliberately not applied to
-  the current patient.** It runs on scikit-learn's built-in
-  `load_diabetes` dataset (no network fetch), clearly labeled in the
-  report as a general capability demonstration. That dataset's features
+  the current patient -- and is not case-level explainability.** It runs
+  on scikit-learn's built-in `load_diabetes` dataset (no network fetch),
+  labeled in the report as "not about this case" and shown as a separated
+  footer so it can't be read as part of the case's own reasoning. That
+  dataset's features
   are scaled by sklearn with no exposed inverse transform, so forcing
   this project's real mmol/L lab values through it would produce SHAP
   numbers that look precise but mean nothing -- exactly the
   "technically incorrect but authoritative-looking" failure mode this
-  whole project exists to avoid. Explaining this patient's actual case
-  is what the citation-grounded narrative is for; the SHAP demo proves
-  the technique works on a real model, honestly scoped as a demo.
+  whole project exists to avoid. What the report shows for this patient
+  is the model's own account of itself plus retrieved literature, which
+  is not the same as an explanation; the SHAP demo only shows that the
+  technique runs on a real model.
 - **`disagreement_flagged` is a real signal, not a placeholder.** It's
   true when the model's own top two differential hypotheses sit within
   `DISAGREEMENT_MARGIN` (0.15) of each other, or when the Diagnostic
@@ -763,7 +895,11 @@ shouldn't have to read thirty bullet points to find the honest gaps:
   not mocks), and checks the audit log accumulated one entry per stage in
   order -- with a fake LLM caller and a small local ChromaDB collection
   injected the same way Phase 4 and 5's own tests do it, so this needs no
-  API key or pre-built literature index to run.
+  API key, no pre-built literature index, and makes no OpenRouter or
+  PubMed call. "Offline" has one honest exception: ChromaDB's default
+  embedding function downloads its ONNX model (about 80MB) on first use
+  and caches it under `~/.cache/chroma`, so the very first run needs a
+  network connection (CI caches it).
 - **The pipeline streams, it doesn't just invoke.** `app.py` calls
   `_pipeline.astream(state)`, not `.invoke(state)` -- streaming yields
   after each node finishes, which is what lets each of the six agents

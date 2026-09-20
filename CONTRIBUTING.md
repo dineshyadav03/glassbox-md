@@ -60,10 +60,13 @@ UI locally.
   (`src/glassbox_md/agents/`) has one job and communicates only through
   `MedicalPipelineState`. If a change needs to reach across agents, that's
   usually a sign it belongs in the state schema, not a direct import.
-- **PHI never crosses the Privacy Protection Agent unredacted.** Any code
-  path that touches patient-shaped data before redaction needs to keep it
-  that way -- see `assert_privacy_boundary_respected` in
-  `privacy_protection.py` for the existing enforcement pattern.
+- **Patient-shaped data must not travel past the Privacy Protection Agent
+  unredacted.** That is the rule; it is only partly enforced.
+  `assert_privacy_boundary_respected` (defined in `state.py`) checks one
+  thing -- that the raw upload paths are cleared once anonymized data
+  exists -- and redaction itself is partial (see the README's Known
+  limitations). Any code path that touches patient-shaped data before
+  redaction needs to keep to the rule by construction, not rely on that check.
 - **Update the README, not just the code**, when you change scope,
   fix a real bug, or hit a real limitation worth documenting. The
   [Status](README.md#status) and [Known limitations](README.md#known-limitations)
