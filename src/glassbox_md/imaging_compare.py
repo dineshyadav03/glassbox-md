@@ -70,7 +70,14 @@ def mcnemar_exact(only_a: int, only_b: int) -> float:
 
 def calibration(records: list[Record]) -> dict[str, Any]:
     """Stated overall confidence vs whether the top-1 call was right."""
-    rows = [(r["overall_confidence"], is_correct(r)) for r in _completed(records) if r.get("overall_confidence") is not None]
+    return calibration_from_pairs(
+        [(r["overall_confidence"], is_correct(r)) for r in _completed(records) if r.get("overall_confidence") is not None]
+    )
+
+
+def calibration_from_pairs(rows: list[tuple[float, bool]]) -> dict[str, Any]:
+    """The same figures from (stated confidence, was-correct) pairs, so other
+    evaluations can reuse the arithmetic."""
     if not rows:
         return {"n": 0}
     brier = statistics.fmean((conf - float(ok)) ** 2 for conf, ok in rows)
