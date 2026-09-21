@@ -357,6 +357,10 @@ def _blank_record(row_idx: int, true_label: str) -> Record:
         "error": None,
         "wall_seconds": None,
         "model_name": None,
+        # From the agent's call stats: model calls made / answers that were
+        # empty or failed the schema. None when the model was never reached.
+        "model_attempts": None,
+        "invalid_responses": None,
     }
 
 
@@ -409,12 +413,18 @@ def run_case(graph: Any, dcm_path: str | Path, row_idx: int, true_label: str) ->
         record["wall_seconds"] = round(time.perf_counter() - started, 2)
         return record
 
+    from .agents import diagnostic_prediction as dp
+
+    dp.reset_call_stats()
     try:
         final_state = graph.invoke(new_state([str(dcm_path)]))
     except Exception as exc:
         record["error"] = f"{type(exc).__name__}: {exc}"
     else:
         _fill_record(record, final_state)
+    if dp.LAST_CALL_STATS["attempts"]:
+        record["model_attempts"] = dp.LAST_CALL_STATS["attempts"]
+        record["invalid_responses"] = dp.LAST_CALL_STATS["invalid_responses"]
     record["wall_seconds"] = round(time.perf_counter() - started, 2)
     return record
 

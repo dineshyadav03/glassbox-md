@@ -16,7 +16,9 @@ Usage:
     python scripts/eval_imaging.py report --in docs/imaging-eval-results.jsonl --md docs/imaging-eval-results.md
 
 Reads OPENROUTER_API_KEY (and optionally OPENROUTER_MODEL) from .env,
-same as the app.
+same as the app. To evaluate a local model instead, set LLM_BASE_URL (e.g.
+http://localhost:11434/v1) and OPENROUTER_MODEL (its name) for the run; no
+API key is needed. `scripts/compare_imaging.py` then compares two results files.
 """
 
 from __future__ import annotations
@@ -38,7 +40,8 @@ DEFAULT_REPORT = REPO_ROOT / "docs" / "imaging-eval-results.md"
 
 
 def cmd_run(args: argparse.Namespace) -> int:
-    if not args.dry_run and not os.environ.get("OPENROUTER_API_KEY"):
+    local_endpoint = os.environ.get("LLM_BASE_URL")
+    if not args.dry_run and not local_endpoint and not os.environ.get("OPENROUTER_API_KEY"):
         print(
             "OPENROUTER_API_KEY is not set. Add it to .env (see .env.example) -- the pipeline's "
             "Diagnostic Prediction step calls OpenRouter for every case, so nothing can run without it. "
@@ -63,6 +66,8 @@ def cmd_run(args: argparse.Namespace) -> int:
             print(conflict, file=sys.stderr)
             return 2
 
+    if not args.dry_run:
+        print(f"Model endpoint: {local_endpoint or 'OpenRouter'}; model: {os.environ.get('OPENROUTER_MODEL', 'openrouter/free')}")
     print("Reading labels for the full test split ...")
     try:
         label_map = imaging_eval.fetch_label_map()
@@ -94,7 +99,7 @@ def cmd_run(args: argparse.Namespace) -> int:
         graph=build_pipeline_graph(),  # llm_caller=None, rag_collection=None: the real OpenRouter call
         skip=skip,
         sleep_seconds=args.sleep,
-        tags={"seed": args.seed, "n_per_class": args.n_per_class},
+        tags={"seed": args.seed, "n_per_class": args.n_per_class, **({"backend": args.label} if args.label else {})},
     )
     print(f"Ran {ran} case(s); results are in {out}. Next: python scripts/eval_imaging.py report --in {out}")
     return 0
@@ -141,6 +146,7 @@ def main() -> int:
     run.add_argument("--resume", action="store_true", help="skip row indices already in --out")
     run.add_argument("--retry-errors", action="store_true", help="implies --resume, but re-runs rows whose last attempt errored")
     run.add_argument("--sleep", type=float, default=3.0, help="seconds to pause between cases (default 3)")
+    run.add_argument("--label", help="free-text arm label stamped on every record as `backend` (e.g. openrouter-free, medgemma1.5-local)")
     run.add_argument("--dry-run", action="store_true", help="print the sampled rows and exit; no images, no LLM calls")
     run.set_defaults(handler=cmd_run)
 

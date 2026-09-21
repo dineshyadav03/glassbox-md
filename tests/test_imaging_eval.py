@@ -586,6 +586,33 @@ def test_run_case_never_raises_when_the_graph_itself_blows_up(dicom_path):
     assert record["row_idx"] == 9 and record["wall_seconds"] is not None
 
 
+def test_run_case_records_the_models_call_stats(dicom_path):
+    from glassbox_md.agents import diagnostic_prediction as dp
+
+    class StatsGraph:
+        def invoke(self, state):
+            dp.LAST_CALL_STATS.update(attempts=3, invalid_responses=2)
+            raise RuntimeError("model call failed")
+
+    record = run_case(StatsGraph(), dicom_path, row_idx=2, true_label="NORMAL")
+
+    assert record["model_attempts"] == 3 and record["invalid_responses"] == 2
+
+
+def test_run_case_leaves_call_stats_empty_when_the_model_was_never_called(dicom_path):
+    from glassbox_md.agents import diagnostic_prediction as dp
+
+    dp.LAST_CALL_STATS.update(attempts=9, invalid_responses=9)  # stale from an earlier case
+
+    class QuietGraph:
+        def invoke(self, state):
+            raise RuntimeError("failed before the model")
+
+    record = run_case(QuietGraph(), dicom_path, row_idx=3, true_label="NORMAL")
+
+    assert record["model_attempts"] is None and record["invalid_responses"] is None
+
+
 def test_run_case_flags_a_pipeline_that_ends_with_no_report_and_no_failed_stage(dicom_path):
     class SilentGraph:
         def invoke(self, state):
