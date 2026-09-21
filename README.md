@@ -35,6 +35,30 @@ roadmap this scaffold is built from -- lives in the published project
 artifact (link in your conversation history). This README covers the code,
 not the reasoning behind it.
 
+### Papers this design draws on
+
+Two papers were the cited inspiration. Titles, authors and IDs below were
+checked against arXiv; neither is implemented here, only drawn on.
+
+- Sun, Akman & Schuller, *Explainable Artificial Intelligence for Medical
+  Applications: A Review*, [arXiv:2412.01829](https://arxiv.org/abs/2412.01829)
+  (2024). Its finding that medical XAI systems tend to lean on one post-hoc
+  method, and its list of properties a trustworthy system needs (including
+  traceability and a clinician in the loop), shaped the explanation and
+  clinician-confirmation design. This project does **not** meet that bar: see
+  "What 'explainable' means here" below.
+- Wu, Zhu, Qi, Chen, Xu, Menolascina & Grau, *Medical Graph RAG: Towards
+  Safe Medical Large Language Model via Graph Retrieval-Augmented
+  Generation*, [arXiv:2408.04187](https://arxiv.org/abs/2408.04187) (2024).
+  Its idea of tying a patient's record to literature and to a controlled
+  vocabulary, so each retrieved fact is traceable to a source, is what the
+  RAG stage borrows. The implementation is a much smaller adaptation: real
+  MeSH concept matching over PubMed abstracts in ChromaDB, not the paper's
+  three-tier graph, UMLS or Neo4j.
+
+No other paper is cited. The imaging evaluation's dataset (Kermany et al.,
+2018) is data, not a design source.
+
 ## What "explainable" means here, and what it doesn't
 
 The name and the pitch promise a glass box. What the project delivers is
