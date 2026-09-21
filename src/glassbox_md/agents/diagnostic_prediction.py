@@ -169,6 +169,13 @@ SYSTEM_INSTRUCTION = (
     "literature by their bracketed source_id. Report overall_confidence "
     "honestly: if the evidence is thin, contradictory, or ambiguous, say "
     "so with a low confidence score rather than overstating certainty.\n\n"
+    "If one or more imaging files are attached, look at them and base any "
+    "imaging finding on what is actually visible; do not invent findings, "
+    "and do not assume the study shows disease just because you were asked "
+    "for a differential. \"No acute abnormality\" (a normal study) is a "
+    "valid entry, and may be the top one, whenever the evidence does not "
+    "support a pathological condition. When imaging is the only evidence, "
+    "say so in reasoning_notes.\n\n"
     "Respond with ONLY a single JSON object (no markdown fences, no other "
     "text) matching exactly this shape:\n"
     "{\n"
@@ -277,7 +284,11 @@ def _load_images_for_prompt(image_paths: list[str]) -> list[tuple[bytes, str]]:
     return loaded
 
 
-def _build_prompt(structured_clinical_data: dict[str, Any], rag_literature_context: list[Citation]) -> str:
+def _build_prompt(
+    structured_clinical_data: dict[str, Any],
+    rag_literature_context: list[Citation],
+    image_count: int = 0,
+) -> str:
     labs = structured_clinical_data.get("labs", {})
     history = structured_clinical_data.get("history_text", "")
 
@@ -286,7 +297,16 @@ def _build_prompt(structured_clinical_data: dict[str, Any], rag_literature_conte
         f"- [{c['source_id']}] {c['title']}: {c['passage'][:300]}" for c in rag_literature_context
     )
 
+    # Without this line an imaging-only case reads as "history: none, labs:
+    # none" and the model is never told there is an image to interpret.
+    imaging_line = (
+        f"Imaging: {image_count} imaging file(s) attached below (modality not stated); "
+        "interpret only what is visible in them.\n\n"
+        if image_count > 0
+        else ""
+    )
     return (
+        f"{imaging_line}"
         f"Patient history: {history or '(none provided)'}\n\n"
         f"Lab values:\n{lab_lines or '(none provided)'}\n\n"
         f"Retrieved literature:\n{citation_lines or '(none retrieved)'}"
@@ -427,9 +447,9 @@ def diagnostic_prediction_agent(
             "audit_log": [audit_entry(STAGE_NAME, "abstained: no clinical data or literature available")],
         }
 
-    prompt = _build_prompt(structured, citations)
     all_image_paths = [entry["source_path"] for entry in imaging]
     image_paths = all_image_paths[:MAX_IMAGES_PER_CALL]
+    prompt = _build_prompt(structured, citations, image_count=len(image_paths))
     dropped_image_count = len(all_image_paths) - len(image_paths)
     caller = llm_caller or _default_caller
 

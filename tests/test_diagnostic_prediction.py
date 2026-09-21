@@ -29,6 +29,7 @@ from pydantic import ValidationError
 from glassbox_md.agents.diagnostic_prediction import (
     CONFIDENCE_THRESHOLD,
     MAX_IMAGES_PER_CALL,
+    SYSTEM_INSTRUCTION,
     DailyQuotaExhausted,
     DifferentialCondition,
     ModelDifferentialResponse,
@@ -277,9 +278,11 @@ class _CountingCaller:
         self.exc = exc
         self.calls = 0
         self.last_image_paths = None
+        self.last_prompt = None
 
     def __call__(self, prompt, image_paths):
         self.calls += 1
+        self.last_prompt = prompt
         self.last_image_paths = image_paths
         if self.exc:
             raise self.exc
@@ -302,6 +305,43 @@ def test_build_prompt_handles_empty_input():
     prompt = _build_prompt({}, [])
     assert "(none provided)" in prompt
     assert "(none retrieved)" in prompt
+
+
+def test_build_prompt_tells_the_model_when_imaging_is_attached():
+    prompt = _build_prompt({}, [], image_count=2)
+    assert prompt.startswith("Imaging: 2 imaging file(s) attached")
+
+
+def test_build_prompt_has_no_imaging_line_without_images():
+    assert "Imaging" not in _build_prompt({}, [])
+    assert "Imaging" not in _build_prompt({}, [], image_count=0)
+
+
+def test_system_instruction_allows_a_normal_study_and_forbids_invented_findings():
+    text = SYSTEM_INSTRUCTION.lower()
+    assert "no acute abnormality" in text
+    assert "do not invent findings" in text
+    assert "imaging files are attached" in text
+
+
+def test_agent_passes_the_image_count_into_the_prompt(sample_dicom):
+    caller = _CountingCaller(response=_fake_response())
+    state = _base_state(
+        anonymized_patient_data={"imaging": [{"source_path": sample_dicom, "metadata": {}, "pixel_summary": {}}]}
+    )
+
+    diagnostic_prediction_agent(state, llm_caller=caller)
+
+    assert caller.last_prompt.startswith("Imaging: 1 imaging file(s) attached")
+
+
+def test_agent_prompt_has_no_imaging_line_for_a_text_only_case():
+    caller = _CountingCaller(response=_fake_response())
+    state = _base_state(structured_clinical_data={"history_text": "type 2 diabetes"})
+
+    diagnostic_prediction_agent(state, llm_caller=caller)
+
+    assert "Imaging" not in caller.last_prompt
 
 
 # --- _dicom_to_png_bytes ----------------------------------------------------
