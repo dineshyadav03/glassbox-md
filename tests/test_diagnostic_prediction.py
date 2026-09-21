@@ -34,7 +34,11 @@ from glassbox_md.agents.diagnostic_prediction import (
     DifferentialCondition,
     ModelDifferentialResponse,
     _build_prompt,
+    LAST_CALL_STATS,
     _call_openrouter,
+    _default_caller,
+    _request_timeout,
+    reset_call_stats,
     _dicom_to_png_bytes,
     diagnostic_prediction_agent,
 )
@@ -287,6 +291,64 @@ class _CountingCaller:
         if self.exc:
             raise self.exc
         return self.response
+
+
+# --- optional local endpoint and call stats ---------------------------------
+
+def test_call_stats_count_attempts_and_invalid_answers():
+    reset_call_stats()
+    client = _FakeClient([_fake_completion("not json"), _fake_completion(""), _fake_completion(_VALID_RESPONSE_JSON)])
+
+    _call_openrouter(client, "m", [{"role": "user", "content": "hi"}])
+
+    assert LAST_CALL_STATS == {"attempts": 3, "invalid_responses": 2}
+
+
+def test_call_stats_do_not_count_a_transient_network_error_as_invalid():
+    reset_call_stats()
+    client = _FakeClient([APIConnectionError(request=_fake_request()), _fake_completion(_VALID_RESPONSE_JSON)])
+
+    _call_openrouter(client, "m", [{"role": "user", "content": "hi"}])
+
+    assert LAST_CALL_STATS == {"attempts": 2, "invalid_responses": 0}
+
+
+@pytest.mark.parametrize("raw, expected", [(None, 90.0), ("", 90.0), ("400", 400.0), ("abc", 90.0), ("-5", 90.0), ("0", 90.0)])
+def test_request_timeout_reads_the_env_var_and_falls_back(monkeypatch, raw, expected):
+    monkeypatch.delenv("LLM_TIMEOUT_SECONDS", raising=False)
+    if raw is not None:
+        monkeypatch.setenv("LLM_TIMEOUT_SECONDS", raw)
+    assert _request_timeout() == expected
+
+
+class _CapturedClient(_FakeClient):
+    last_init = None
+
+    def __init__(self, **kwargs):
+        type(self).last_init = kwargs
+        super().__init__([_fake_completion(_VALID_RESPONSE_JSON)])
+
+
+def test_default_caller_targets_openrouter_when_no_base_url_is_set(monkeypatch):
+    monkeypatch.delenv("LLM_BASE_URL", raising=False)
+    monkeypatch.delenv("LLM_API_KEY", raising=False)
+    monkeypatch.setenv("OPENROUTER_API_KEY", "or-key")
+    monkeypatch.setattr("glassbox_md.agents.diagnostic_prediction.OpenAI", _CapturedClient)
+
+    _default_caller("prompt", [])
+
+    assert _CapturedClient.last_init == {"api_key": "or-key", "base_url": "https://openrouter.ai/api/v1"}
+
+
+def test_default_caller_can_target_a_local_server_without_any_key(monkeypatch):
+    monkeypatch.setenv("LLM_BASE_URL", "http://localhost:11434/v1")
+    monkeypatch.delenv("LLM_API_KEY", raising=False)
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    monkeypatch.setattr("glassbox_md.agents.diagnostic_prediction.OpenAI", _CapturedClient)
+
+    _default_caller("prompt", [])
+
+    assert _CapturedClient.last_init == {"api_key": "not-needed", "base_url": "http://localhost:11434/v1"}
 
 
 # --- _build_prompt ---------------------------------------------------------

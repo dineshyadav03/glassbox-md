@@ -23,9 +23,12 @@ called directly, both tried first:
     checking billing.
   - OpenAI was tried next, but its API has no meaningful free tier --
     billing is required even for the nominal trial credit.
-  - A local model (e.g. via Ollama) was considered and rejected for a
-    different reason: it only runs on the machine it's installed on, so
-    a deployed version of this app couldn't reach it.
+  - A local model (e.g. via Ollama) was considered and rejected as the
+    DEFAULT for a different reason: it only runs on the machine it's
+    installed on, so a deployed version of this app couldn't reach it. It
+    is available as an opt-in: set `LLM_BASE_URL` to any OpenAI-compatible
+    server (see `.env.example`) and the same client, prompt and validation
+    run against it, with no case data leaving the machine.
   - OpenRouter's free router auto-selects, per request, a free model
     that supports both image input and structured JSON output, and is
     itself a normal hosted API reachable from a deployed app -- no
@@ -120,11 +123,43 @@ MODEL_ENV_VAR = "OPENROUTER_MODEL"
 DEFAULT_MODEL_NAME = "openrouter/free"  # a router, deliberately not a specific model; see .env.example
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 
+# Optional: point the same client at any OpenAI-compatible server instead of
+# OpenRouter -- e.g. a local Ollama (`http://localhost:11434/v1`) so no case
+# data leaves the machine. Unset, nothing changes. A local model needs no key.
+BASE_URL_ENV_VAR = "LLM_BASE_URL"
+API_KEY_ENV_VAR = "LLM_API_KEY"
+TIMEOUT_ENV_VAR = "LLM_TIMEOUT_SECONDS"
+
 # Generous, not tight: the free router's observed latency in practice is
 # around 70s (queueing/routing overhead on a $0 model), so a conventional
 # 10-30s API timeout would fail this specific setup routinely, not
 # exceptionally.
 REQUEST_TIMEOUT_SECONDS = 90.0
+
+
+def _request_timeout() -> float:
+    """`LLM_TIMEOUT_SECONDS` if set to a positive number, else the default.
+    A CPU-only local model can take a few minutes per case, so the hosted
+    default is too tight for it."""
+    raw = os.environ.get(TIMEOUT_ENV_VAR)
+    try:
+        value = float(raw) if raw else REQUEST_TIMEOUT_SECONDS
+    except ValueError:
+        return REQUEST_TIMEOUT_SECONDS
+    return value if value > 0 else REQUEST_TIMEOUT_SECONDS
+
+
+# Evaluation instrumentation, not pipeline state: how many model calls the
+# LAST `_default_caller` invocation made, and how many of those answers were
+# unusable (empty, or JSON that failed the schema). The eval harness reads it
+# to report first-try JSON validity, which the retry otherwise hides. A plain
+# module global, so it is only meaningful for one call at a time -- fine for
+# the sequential eval, not something to build product logic on.
+LAST_CALL_STATS: dict[str, int] = {"attempts": 0, "invalid_responses": 0}
+
+
+def reset_call_stats() -> None:
+    LAST_CALL_STATS.update(attempts=0, invalid_responses=0)
 
 # Retries transient network cases (connection blips, timeouts, rate
 # limits, 5xx) AND a malformed/non-JSON response (ValidationError,
@@ -336,13 +371,14 @@ def _call_openrouter(
     caller sees the original exception type after retries are exhausted,
     not a tenacity wrapper.
     """
+    LAST_CALL_STATS["attempts"] += 1
     try:
         completion = client.chat.completions.create(
             model=model_name,
             messages=messages,
             response_format={"type": "json_object"},
             temperature=0.2,
-            timeout=REQUEST_TIMEOUT_SECONDS,
+            timeout=_request_timeout(),
         )
     except RateLimitError as exc:
         # A per-minute limit clears in seconds and is worth the short retry
@@ -369,8 +405,13 @@ def _call_openrouter(
         raise ValueError("provider returned no choices (upstream error)")
     raw_content = completion.choices[0].message.content
     if not raw_content:
+        LAST_CALL_STATS["invalid_responses"] += 1
         raise ValueError("model returned an empty response")
-    response = ModelDifferentialResponse.model_validate_json(raw_content)
+    try:
+        response = ModelDifferentialResponse.model_validate_json(raw_content)
+    except ValidationError:
+        LAST_CALL_STATS["invalid_responses"] += 1
+        raise
     response._served_by = getattr(completion, "model", None) or None
     return response
 
@@ -382,7 +423,12 @@ def _default_caller(prompt: str, image_paths: list[str]) -> ModelDifferentialRes
     supply a fake instead."""
     import base64
 
-    client = OpenAI(api_key=os.environ.get("OPENROUTER_API_KEY"), base_url=OPENROUTER_BASE_URL)
+    base_url = os.environ.get(BASE_URL_ENV_VAR) or OPENROUTER_BASE_URL
+    api_key = os.environ.get(API_KEY_ENV_VAR) or os.environ.get("OPENROUTER_API_KEY")
+    if not api_key and base_url != OPENROUTER_BASE_URL:
+        api_key = "not-needed"  # the SDK insists on a non-empty key; a local server ignores it
+    client = OpenAI(api_key=api_key, base_url=base_url)
+    reset_call_stats()
     model_name = os.environ.get(MODEL_ENV_VAR, DEFAULT_MODEL_NAME)
 
     content: list[dict[str, Any]] = [{"type": "text", "text": prompt}]
