@@ -52,3 +52,41 @@ That verdict needs a caveat the rule didn't anticipate: resampling the SAME reda
 - One run per condition (this ablation is not itself repeated), against a model that is not run at temperature 0.
 - The redaction toggle is a monkeypatch in a throwaway script (`redact_text` replaced with the identity function for the process's lifetime), not a code path in the app; it disables ALL text redaction, not just DATE_TIME, so this measures the ceiling if nothing were redacted, not option A or B specifically.
 - Strict keyword-based scoring as elsewhere in this project's evals; see `text_eval.py`.
+
+---
+
+## Addendum: powered rerun, planned (2026-09-22)
+
+The single-run ablation above sits right at its own decision threshold, with
+a same-condition resample moving nearly as much as the effect being
+attributed to redaction. Decision: neither implement A+B nor backlog on that
+evidence. Instead, run **5 repeats of both arms** (redacted, unredacted;
+same 32 cases; local MedGemma 1.5; alternating order), and decide from the
+distribution of per-repeat accuracy, not one run per arm.
+
+**Rule, fixed before running:**
+
+- **Non-overlap:** every one of the 5 unredacted repeat accuracies exceeds
+  every one of the 5 redacted repeat accuracies (`min(unredacted) >
+  max(redacted)`).
+- **And** an exact permutation test over all 252 ways to split the 10
+  repeat accuracies into two groups of 5 gives a two-sided p < 0.05 on the
+  difference in means.
+
+Both together is "unredacted wins consistently beyond the run-to-run
+spread": implement A+B immediately after (Safe Harbor-only date filtering +
+age bucketing with a real age recognizer so ages 90+ stop leaking, typed
+placeholders for whatever is still redacted, the blood-pressure-as-
+`PHONE_NUMBER` and clinical-term-as-`LOCATION`/`PERSON` recognizer fixes,
+redaction tests updated). Either condition failing means the distributions
+overlap: redaction stays, and this question is closed with evidence.
+
+**Mechanism hypothesis to watch, not part of the primary rule:** the single
+run showed normal-panel controls scoring 1/4 correct redacted vs 3/4
+unredacted -- consistent with garbled `<DATE_TIME> with <DATE_TIME>` text
+prompting the model to invent a condition on a clean panel. The rerun will
+report each of the 4 control cases' correct-rate out of 5 per arm. If this
+pattern holds up across repeats, it is the strongest argument for A+B
+specifically (typed placeholders fixing garbled-token hallucination),
+independent of whether the primary accuracy rule is met -- reported
+alongside the primary verdict, not substituted for it.
