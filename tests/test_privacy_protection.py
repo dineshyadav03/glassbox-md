@@ -391,7 +391,7 @@ def test_missing_spacy_model_fails_fast_with_the_install_command(monkeypatch):
     ],
 )
 def test_new_recognizers_stay_silent_on_text_that_trips_older_ones(text):
-    """These do get touched by the pre-existing DATE_TIME recognizer, so
+    """These can still be touched by the date/duration handling, so
     byte-identical is the wrong assertion -- what matters is that the
     device/plate recognizers themselves don't fire."""
     _, counts = redact_text(text)
@@ -405,8 +405,8 @@ def test_new_recognizers_stay_silent_on_text_that_trips_older_ones(text):
     "text, entity, secret",
     [
         ("Seen in Springfield, Illinois.", "LOCATION", "Springfield"),
-        ("Seen on March 14, 2021.", "DATE_TIME", "March 14, 2021"),
-        ("She is 95 years old.", "DATE_TIME", "95"),
+        ("Seen on March 14, 2021.", "DATE", "March 14, 2021"),
+        ("She is 95 years old.", "AGE_BAND", "95"),
         ("Call (555) 234-5678 for results.", "PHONE_NUMBER", "234-5678"),
         ("Fax: 555-234-5679", "PHONE_NUMBER", "234-5679"),
         ("Contact jane.doe@example.org for records.", "EMAIL_ADDRESS", "jane.doe@example.org"),
@@ -606,3 +606,203 @@ def test_no_planted_pii_survives_parser_and_privacy_together(tmp_path):
     # And the terminology the note carried should still be there --
     # redaction should not have removed clinically meaningful content.
     assert "T2DM" in output_text or "diabetes" in output_text.lower()
+
+
+# --- date / age policy through the real analyzer --------------------------------
+#
+# See agents/redaction_policy.py. The privacy-critical direction is asserted
+# hardest: no calendar date and no age of 90 or over may survive, in any of the
+# forms below. The other direction (clinically useful durations and ages are
+# kept) is what the powered rerun in docs/text-eval-redaction-powered-rerun.md
+# showed was worth ~5 of 32 cases.
+
+_AGE_FORMS = [
+    "{n} year old", "{n}-year-old", "{n} years old", "{n} y/o", "{n}yo", "{n} y.o.", "aged {n}", "Age: {n}",
+    "age {n}", "at the age of {n}", "{n} years of age", "age of {n} years", "{n} yr old", "Age {n} years",
+    "{n} year-old", "{n}-yr-old",
+]
+
+
+@pytest.mark.parametrize("n", [90, 93, 101])
+@pytest.mark.parametrize("form", _AGE_FORMS)
+def test_an_age_of_90_or_over_is_generalised_in_every_supported_form(form, n):
+    redacted, counts = redact_text(f"Patient is {form.format(n=n)} and presents today.")
+    if n > 90:
+        assert str(n) not in redacted
+    assert "90+" in redacted
+    assert counts.get("AGE_BAND", 0) >= 1
+
+
+@pytest.mark.parametrize(
+    "phrase",
+    [
+        "ninety year old", "ninety-three year old", "ninety three years old", "ninety-five-year-old",
+        "one hundred year old", "aged ninety-two", "in his 90s", "in her nineties", "in his late 90s",
+    ],
+)
+def test_a_written_out_age_of_90_or_over_is_generalised(phrase):
+    redacted, _ = redact_text(f"Patient is {phrase} with cough.")
+    assert "90+" in redacted
+
+
+@pytest.mark.parametrize(
+    "age, band",
+    [(18, "18-19"), (19, "18-19"), (20, "20-29"), (52, "50-59"), (67, "60-69"), (89, "80-89")],
+)
+def test_adult_ages_under_90_become_a_decade_band(age, band):
+    redacted, counts = redact_text(f"A {age} year old with a cough.")
+    assert redacted == f"A {band} year old with a cough."
+    assert counts == {"AGE_BAND": 1}
+
+
+@pytest.mark.parametrize("text", ["A 5 year old with a cough.", "A 17 year old with a cough.", "Patient is a 4 month old infant."])
+def test_a_childs_age_is_kept_exactly(text):
+    redacted, counts = redact_text(text)
+    assert redacted == text and counts == {}
+
+
+@pytest.mark.parametrize(
+    "text, secret",
+    [
+        ("Seen on March 14, 2021.", "2021"), ("Seen on 03/14/2021.", "03/14/2021"), ("Seen 3/14/21.", "3/14/21"),
+        ("Seen 14 March 2021.", "2021"), ("Seen 2021-03-14.", "2021-03-14"), ("Seen Mar 14 2021.", "2021"),
+        ("DOB 05/12/1980", "1980"), ("DOB: 12 May 1980", "1980"), ("born in 1980", "1980"), ("Born May 1980.", "1980"),
+        ("admitted on 2019-03-14 and discharged 2019-03-20", "2019"), ("since 2019", "2019"), ("in summer 2019", "2019"),
+        ("on Monday", "Monday"), ("last Tuesday", "Tuesday"), ("on September 3rd", "September"), ("Sept. 3, 2020", "2020"),
+        ("in January", "January"), ("the 1990s", "1990"), ("at 3:30 pm", "3:30"), ("at 14:30", "14:30"),
+        ("visit scheduled for 12/25/2026", "2026"), ("died on 2 April 2024", "2024"), ("March of 2018", "2018"),
+        ("Date of birth: 1/2/1950", "1950"), ("Admission date 03-14-2021", "2021"), ("surgery in 2015", "2015"),
+        ("December 2020", "2020"), ("Q3 2019", "2019"),
+    ],
+)
+def test_no_calendar_date_or_clock_time_survives(text, secret):
+    redacted, counts = redact_text(text)
+    assert secret not in redacted
+    assert "<DATE_TIME>" not in redacted
+    assert counts.get("DATE", 0) + counts.get("TIME", 0) >= 1
+
+
+def test_redactions_of_dates_and_times_are_typed_not_generic():
+    redacted, counts = redact_text("Seen on 03/14/2021 at 3:30 pm.")
+    assert "<DATE>" in redacted and "<TIME>" in redacted
+    assert "DATE_TIME" not in counts and "<DATE_TIME>" not in redacted
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Symptoms for three months, worse over the past year.",
+        "Thirst and frequent urination for two weeks.",
+        "Take metformin twice daily.",
+        "Vitals every 6 hours.",
+        "He had a stent placed two years ago.",
+        "Has not seen a doctor in ten years.",
+        "Chest pressure eases within minutes of resting.",
+        "Glucose has been high for several months.",
+        "Creatinine rising over six months.",
+        "Fatigue since last week.",
+        "Diabetic for twelve years.",
+    ],
+)
+def test_durations_frequencies_and_relative_times_are_kept_verbatim(text):
+    redacted, counts = redact_text(text)
+    assert redacted == text and counts == {}
+
+
+def test_a_duration_of_ninety_years_or_more_is_generalised_because_it_reads_as_an_age():
+    redacted, _ = redact_text("Has lived alone for 95 years.")
+    assert "95" not in redacted and "90+" in redacted
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Blood pressure 168/102 on three separate visits.",
+        "BP 152/96 at home.",
+        "Home readings average 152/96 over two weeks, confirmed in clinic at 150/94.",
+    ],
+)
+def test_blood_pressures_are_not_mistaken_for_phone_numbers(text):
+    redacted, counts = redact_text(text)
+    assert "PHONE_NUMBER" not in counts
+    assert any(v in redacted for v in ("168/102", "152/96", "150/94"))
+
+
+def test_a_real_phone_number_next_to_a_blood_pressure_is_still_redacted():
+    redacted, counts = redact_text("BP 168/102. Call (555) 234-5678 for results.")
+    assert "168/102" in redacted
+    assert "234-5678" not in redacted and counts.get("PHONE_NUMBER", 0) >= 1
+
+
+@pytest.mark.parametrize(
+    "text, kept",
+    [
+        ("Treadmill stress test showed ST segment depression at moderate workload.", "ST segment"),
+        ("Yellow fatty deposits on the Achilles tendons.", "Achilles tendons"),
+        ("Sister has Hashimoto thyroiditis.", "Hashimoto thyroiditis"),
+        ("Family history of Graves disease.", "Graves disease"),
+    ],
+)
+def test_clinical_terms_are_not_redacted_as_names_or_places(text, kept):
+    redacted, counts = redact_text(text)
+    assert kept in redacted
+    assert "PERSON" not in counts and "LOCATION" not in counts
+
+
+@pytest.mark.parametrize(
+    "text, name",
+    [
+        ("Dr. Graves reviewed the chart.", "Graves"),
+        ("Seen by Dr. Alice Nguyen today.", "Nguyen"),
+        ("Patient: Achilles Papadopoulos was seen.", "Papadopoulos"),
+        ("Referred by Mr Hashimoto.", "Hashimoto"),
+    ],
+)
+def test_real_names_are_still_redacted_even_when_they_look_like_clinical_terms(text, name):
+    redacted, counts = redact_text(text)
+    assert name not in redacted and counts.get("PERSON", 0) >= 1
+
+
+def test_a_name_then_a_disease_word_in_a_full_sentence_keeps_only_the_disease():
+    redacted, counts = redact_text("John Smith has Graves disease.")
+    assert "Smith" not in redacted and "Graves disease" in redacted
+    assert counts.get("PERSON", 0) >= 1
+
+
+def test_every_synthetic_text_eval_history_keeps_its_clinical_content():
+    """The 32 histories the powered rerun used. Before this policy each lost
+    its age and every duration to `<DATE_TIME>`; now nothing but a bare number
+    after "at" is lost, and no generic date token remains."""
+    from glassbox_md import text_eval
+
+    for case in text_eval.CASES:
+        redacted, counts = redact_text(case.history)
+        assert "<DATE_TIME>" not in redacted and "DATE_TIME" not in counts, case.case_id
+        words = {w for w in "".join(c if c.isalpha() else " " for c in case.history.lower()).split() if len(w) >= 5}
+        kept = {w for w in words if w in redacted.lower()}
+        assert len(kept) >= 0.9 * len(words), (case.case_id, sorted(words - kept))
+        assert "year old" in redacted, case.case_id  # the age survives, as a band
+
+
+def test_the_audit_summary_reports_the_new_entity_types_without_values():
+    from glassbox_md.agents.privacy_protection import privacy_protection_agent
+    from glassbox_md.state import new_stage_status
+
+    state = {
+        "extracted_document_content": {
+            "documents": [
+                {"kind": "pdf", "text": "A 52 year old seen on 03/14/2021 for two weeks of cough.", "tables": []}
+            ]
+        },
+        "raw_input_paths": ["x.pdf"],
+        "stage_status": new_stage_status(),
+        "audit_log": [],
+    }
+
+    update = privacy_protection_agent(state)
+
+    entry_text = str(update["audit_log"][0])
+    assert "AGE_BAND:1" in entry_text and "DATE:1" in entry_text
+    assert "03/14/2021" not in entry_text and "52" not in entry_text
+    history = update["anonymized_patient_data"]["history_text"]
+    assert history == "A 50-59 year old seen on <DATE> for two weeks of cough."

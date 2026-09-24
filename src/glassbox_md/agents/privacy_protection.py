@@ -88,12 +88,24 @@ unhandled, not that recall is perfect (see the spaCy note below). README's
                                       tagged but its number survives, and
                                       ZIP codes are not reliably caught
                                       (a bare "ZIP: 90210" passes through)
-    (C) dates                      -- DATE_TIME redacts every date
-                                      element, year included (stricter
-                                      than Safe Harbor needs). Ages over
-                                      89 are caught only as "N years old";
-                                      "aged 93", "93 y/o" and "Age: 91"
-                                      pass through
+    (C) dates                      -- calendar dates, months, years,
+                                      weekdays and clock times are all
+                                      redacted, typed `<DATE>`/`<TIME>`
+                                      (stricter than Safe Harbor's
+                                      "year may stay"). Ages over 89
+                                      become "90+" in "N year old", "N
+                                      y/o", "aged N", "Age: N", "N years
+                                      of age", written-out numbers and
+                                      "in his 90s"; ages 18-89 become a
+                                      decade band, under 18 stay as
+                                      written. Durations, frequencies and
+                                      relative words are kept -- they are
+                                      not date elements -- so a "three
+                                      months" of symptoms reaches the
+                                      model. See redaction_policy.py.
+                                      Still missed: an over-89 age in a
+                                      form neither the regexes nor spaCy
+                                      catch ("93M", "nonagenarian")
     (I) health plan beneficiary    -- Medicare only (US_MBI, a fixed
         numbers                       format); commercial member, policy
                                       and group IDs are not caught
@@ -194,6 +206,15 @@ measuring before anyone does it. Either way this is recall on synthetic
 test text, not a claim of production-grade recall on messy real-world
 text.
 
+Date, age and clinical-term handling lives in `redaction_policy.py`: it
+post-processes Presidio's results so the anonymizer no longer turns ages,
+durations and dosing frequencies into `<DATE_TIME>`, no longer reads a blood
+pressure ("168/102") as a phone number, and no longer reads "ST segment" or
+"Achilles tendon" as a place or a person. It was added after a powered rerun
+found the old behaviour cost the same local model about 5 of 32 cases
+(docs/text-eval-redaction-powered-rerun.md). It is an allow-list: only a span
+that positively matches a duration/frequency/relative pattern is kept.
+
 DICOM tag list: a curated subset of the PS3.15 Basic Application Level
 Confidentiality Profile (the identity-bearing tags most likely to appear
 in a clinical file), not the full ~200-tag table -- see
@@ -213,10 +234,12 @@ import spacy.util
 from presidio_analyzer import AnalyzerEngine, Pattern, PatternRecognizer
 from presidio_analyzer.predefined_recognizers import UsMbiRecognizer
 from presidio_anonymizer import AnonymizerEngine
+from presidio_anonymizer.entities import OperatorConfig
 
 from ..audit import audit_entry
 from ..state import MedicalPipelineState, assert_privacy_boundary_respected, update_stage_status
 from .document_parser import Table
+from .redaction_policy import age_replacement, apply_policy
 
 STAGE_NAME = "privacy_protection"
 
@@ -458,6 +481,11 @@ _ENTITIES = [
 _analyzer: AnalyzerEngine | None = None
 _anonymizer = AnonymizerEngine()
 
+# Ages that the date/age policy generalises are rewritten to text ("50-59
+# year old", "90+ year old") rather than replaced by a placeholder; everything
+# else takes the default `<ENTITY_TYPE>` replacement.
+_OPERATORS = {"AGE_BAND": OperatorConfig("custom", {"lambda": age_replacement})}
+
 
 def _get_analyzer() -> AnalyzerEngine:
     """Lazily build the AnalyzerEngine -- loading the spaCy model has real
@@ -511,7 +539,8 @@ def redact_text(text: str) -> tuple[str, dict[str, int]]:
         return text, {}
 
     results = _get_analyzer().analyze(text=text, language="en", entities=_ENTITIES)
-    anonymized = _anonymizer.anonymize(text=text, analyzer_results=results)
+    results = apply_policy(text, results)  # see redaction_policy: what is kept, banded or typed
+    anonymized = _anonymizer.anonymize(text=text, analyzer_results=results, operators=_OPERATORS)
 
     counts: dict[str, int] = defaultdict(int)
     for item in anonymized.items:
