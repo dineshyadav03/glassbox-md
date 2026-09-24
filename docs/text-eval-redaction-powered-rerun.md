@@ -94,3 +94,32 @@ Hypothesis from the single-run ablation (1/4 correct redacted vs 3/4 unredacted)
 - **Not all of the gap is DATE_TIME.** The switch turns off *all* text redaction, so it cannot say which entity type carries the effect. The single largest swing is `htn-1` (0/5 -> 5/5), whose history contains a blood pressure of 168/102 that the redactor rewrites to `<PHONE_NUMBER>`; that is the phone-number false positive, not the date one. `ckd-1` (1/5 -> 5/5), `cad-2`, `cad-4` and `lip-2` are the other large movers.
 - **What this does not show:** that an option-A/B redactor recovers the unredacted score. That needs its own run after the change.
 - **Limits:** one local model, 32 synthetic cases written by the author and not clinician-reviewed, strict keyword scoring, and the unredacted arm exists only in a throwaway script; it is not something the app can do.
+
+---
+
+## Addendum: validating the implemented policy (planned, 2026-09-25)
+
+The rerun above measured redaction on vs off. The redactor was then replaced
+(`agents/redaction_policy.py`, commit `c79ad78`). That change is not the same
+as "off": it still removes calendar dates, bands ages, and redacts anything it
+cannot classify. Whether it recovers the lost accuracy is untested, so it is
+measured the same way: **5 repeats of the 32 cases, current code, local
+MedGemma 1.5**, compared with the 5 old-redactor and 5 unredacted repeats
+already collected.
+
+**Read as, fixed before running:**
+
+- **Recovers** if every new-policy repeat exceeds the best old-redactor repeat
+  (`min(new) > 22`) and an exact permutation test against the old-redactor
+  repeats gives two-sided p < 0.05.
+- **Indistinguishable from unredacted** if the same test against the
+  unredacted repeats gives p >= 0.05 or the ranges overlap; **still below it**
+  otherwise.
+- The 4 control cases are reported per case out of 5, as before.
+- If it does **not** recover, this is reported as is and the redactor is not
+  tuned further without an explicit decision.
+
+Caveats known in advance: the old-arm repeats were run two days earlier on a
+machine in a different state, so a shift in latency or load is possible (it
+should not affect accuracy); it is one small local model and one
+author-written case set.
