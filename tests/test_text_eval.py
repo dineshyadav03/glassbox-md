@@ -188,9 +188,9 @@ def test_every_case_reaches_the_model_with_its_labs_and_history(case, tmp_path, 
     prompt = echo.prompts[0]
     for name, value, _unit in case.labs:
         assert _key(name) in prompt.lower().replace(" ", "_") or name.lower() in prompt.lower(), (case.case_id, name)
-    # Not verbatim: the Privacy agent's date/time recognizer rewrites ages and
-    # durations ("52 year old", "three months") to <DATE_TIME>. What must survive
-    # is the clinical substance, so check that most of the descriptive words do.
+    # Not verbatim: the Privacy agent bands ages ("52 year old" -> "50-59 year old")
+    # and redacts a bare number after "at". What must survive is the clinical
+    # substance, so check that most of the descriptive words do.
     words = {w for w in "".join(ch if ch.isalpha() else " " for ch in case.history.lower()).split() if len(w) >= 5}
     kept = {w for w in words if w in prompt.lower()}
     assert len(kept) >= 0.6 * len(words), (case.case_id, sorted(words - kept))

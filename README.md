@@ -202,6 +202,29 @@ websocket, verified against the running server before and after. The app
 is still not deployment-ready; see the Deployment checklist for what
 exists and what doesn't.
 
+**Model comparison and a redaction fix that measurement forced.** The
+diagnostic model can now run on any OpenAI-compatible server
+(`LLM_BASE_URL`, e.g. a local Ollama), so a case need not leave the machine.
+The same 60 chest X-rays went through the free OpenRouter route and local
+MedGemma 1.5 (4B, CPU-only): 58.3% vs 61.7% top-1, overlapping intervals,
+McNemar p = 0.82 -- no distinguishable accuracy difference; local produced no
+invalid JSON (the free route needed retries on about one case in five), and
+the free arm was served by three different underlying models, so it measures
+the router. Both are weak at pneumonia (sensitivity 33-37%). On 32 synthetic
+lab/history cases the Privacy agent turned out to be hurting the model: it
+rewrote every age and duration to `<DATE_TIME>`, read a blood pressure as a
+phone number, and read "ST segment" as a place. A first ablation was
+ambiguous (a same-condition resample moved half as much as the effect), so it
+was repeated five times per arm with the rule fixed in advance: redacted
+20-22 of 32 correct, unredacted 24-27, no overlap, exact permutation p = 0.008.
+`redaction_policy.py` now keeps durations and frequencies, generalises ages
+to a decade band (90+ for ages over 89, which also closes a leak: "aged 93"
+used to pass through), and types what it still redacts (`<DATE>`, `<TIME>`).
+Not shown: that the new redactor recovers the unredacted score (that needs
+its own run), or that any of this transfers beyond one small local model
+and 32 author-written cases. See `docs/imaging-comparison.md` and
+`docs/text-eval-redaction-powered-rerun.md`.
+
 **Condition coverage V2: 2 -> 6 target conditions, and a real finding
 that reframed what "scoped to N conditions" even means.** Research
 before implementing found there is no condition-rejection gate anywhere
@@ -377,7 +400,10 @@ healthcare/
 ├── public/banner.css               the persistent disclaimer banner (pure CSS, no JS)
 ├── docs/
 │   ├── reference-images/     the 11 original pitch screenshots this project is built from
-│   └── imaging-eval-results.{jsonl,md}  raw per-case results and generated report of the real-image evaluation
+│   ├── imaging-eval-results.{jsonl,md}  raw per-case results and generated report of the real-image evaluation
+│   ├── imaging-comparison.md            OpenRouter free route vs local MedGemma 1.5, same 60 rows
+│   ├── text-eval-redaction-*.md         the redaction ablation and the 5-repeat rerun that led to redaction_policy.py
+│   └── comparison/                      the raw JSONL behind those reports
 ├── .github/
 │   ├── workflows/ci.yml           pytest on Python 3.11 + 3.13, against requirements.txt and the lock file
 │   ├── workflows/security-audit.yml  weekly pip-audit of the lock file
@@ -394,17 +420,22 @@ healthcare/
 │   ├── origin_guard.py        ASGI middleware: rejects cross-origin HTTP and websocket requests
 │   ├── pipeline.py             wires all six agents into one LangGraph StateGraph (done)
 │   ├── imaging_eval.py         real-image evaluation: sampling, scoring, Wilson CIs, report (done)
+│   ├── imaging_compare.py      paired comparison of two imaging-eval arms (McNemar, calibration, JSON validity)
+│   ├── text_eval.py            32 synthetic lab/history cases with known answers, scorer and runner
 │   └── agents/
 │       ├── data_preparation.py   unit conversion + terminology normalization (done)
 │       ├── document_parser.py    PDF (pdfplumber) + DICOM (pydicom), separate paths (done)
 │       ├── privacy_protection.py NER redaction, lab extraction, DICOM tag stripping (done)
+│       ├── redaction_policy.py   what date-like text is kept, banded or typed; BP and clinical-term fixes
 │       ├── medical_knowledge_rag.py PubMed fetch + ChromaDB index/query (done)
 │       ├── controlled_vocabulary.py canonical term -> real MeSH Descriptor UI map (done)
 │       ├── diagnostic_prediction.py Structured differential via OpenRouter (done)
 │       └── explainability.py       Report assembly: model's self-reported reasoning + retrieved citations; separate SHAP demo (done)
 ├── scripts/
 │   ├── build_literature_index.py  offline: fetch PubMed, build the RAG index
-│   └── eval_imaging.py            slow, networked: run + report the real-image evaluation
+│   ├── eval_imaging.py            slow, networked: run + report the real-image evaluation
+│   ├── eval_text.py               run + report the synthetic text-only case set
+│   └── compare_imaging.py         offline: paired comparison of two imaging-eval results
 ├── data/
 │   ├── README.md              what goes in each subfolder, and what must never go there
 │   ├── imaging/                public/synthetic imaging data only
@@ -562,7 +593,8 @@ shouldn't have to read thirty bullet points to find the honest gaps:
   license plates, device serial numbers/UDIs in free text -- a bare value
   with no label is deliberately not redacted), and 5 partial (geographic
   subdivisions: a street number survives and ZIP codes aren't reliably
-  caught; dates: ages over 89 only as "N years old"; health plan numbers:
+  caught; dates: ages over 89 are generalised to "90+" in the common
+  written forms but not every one, e.g. a bare "93M"; health plan numbers:
   Medicare only; certificate/license numbers: DEA-format only; the
   open-ended "any other unique identifier": ITINs only). Biometric
   identifiers and full-face photographs (pixel-level DICOM defacing) are

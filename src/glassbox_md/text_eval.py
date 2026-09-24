@@ -19,10 +19,11 @@ What the cases are, and are not:
   results, no complaint; the top-1 must NOT name a target condition), each
   with its own scoring rule below.
 
-Known effect on these cases: the Privacy agent's date/time recognizer rewrites
-ages and durations ("52 year old", "three months") to <DATE_TIME> before the
-model sees them, so the model reasons over a history with those details
-removed. That is the pipeline as it is, and it is part of what is measured.
+Known effect on these cases: the Privacy agent rewrites the history before the
+model sees it. Until the redaction policy (agents/redaction_policy.py) it
+replaced every age and duration with <DATE_TIME> and read some blood pressures
+as phone numbers; a run made before that change is not comparable to one made
+after it. That is part of what is measured, not something the cases correct for.
 
 Expected values are condition keys from `CONDITIONS`. Matching model text to
 a condition is a keyword check (`condition_keys_in`), deliberately strict and
@@ -451,7 +452,7 @@ def render_markdown(summary: dict[str, Any]) -> str:
         "",
         "- Keyword matching of model text to conditions is strict and negation-aware; an unfamiliar wording counts as a miss.",
         "- Small clean synthetic set: intervals are wide and a good score here says nothing about messy real charts.",
-        "- The Privacy agent replaces ages and durations with <DATE_TIME> before the model sees the history; that loss is part of the pipeline being measured.",
+        "- The Privacy agent rewrites the history before the model sees it (ages banded, absolute dates typed, durations kept since redaction_policy.py); results from before that change are not comparable.",
         "- Hypertension has no structured lab; its cases carry blood pressure in the history text only.",
         "",
     ]
