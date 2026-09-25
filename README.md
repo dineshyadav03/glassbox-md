@@ -220,10 +220,13 @@ was repeated five times per arm with the rule fixed in advance: redacted
 `redaction_policy.py` now keeps durations and frequencies, generalises ages
 to a decade band (90+ for ages over 89, which also closes a leak: "aged 93"
 used to pass through), and types what it still redacts (`<DATE>`, `<TIME>`).
-Not shown: that the new redactor recovers the unredacted score (that needs
-its own run), or that any of this transfers beyond one small local model
-and 32 author-written cases. See `docs/imaging-comparison.md` and
-`docs/text-eval-redaction-powered-rerun.md`.
+Validated the same way (5 repeats, criteria fixed in advance): the new
+redactor scored 26-27 of 32 (mean 26.8), above every old-redactor repeat
+(p = 0.008) and not distinguishable from redaction off (24-27, p = 0.17),
+with normal-panel controls at 17/20 against 5/20 before. Not shown: that any
+of this transfers beyond one small local model and 32 author-written cases.
+See `docs/imaging-comparison.md`, `docs/text-eval-redaction-powered-rerun.md`
+and `docs/text-eval-redaction-policy-validation.md`.
 
 **Condition coverage V2: 2 -> 6 target conditions, and a real finding
 that reframed what "scoped to N conditions" even means.** Research
@@ -616,6 +619,12 @@ shouldn't have to read thirty bullet points to find the honest gaps:
   count risks payload-size/latency problems on an already-slow (~70s)
   free-tier call; exceeding it is noted in the audit log, not silently
   truncated. See Design decisions below.
+- **The model call has no output cap.** In the validation run one case
+  (a normal-panel control) made local MedGemma 1.5 generate 4,500+ tokens
+  without stopping, against a normal 300-500, and the request timed out
+  three times over, about 90 minutes in all. One case in roughly 500 model
+  calls, but nothing bounds it: `max_tokens` is not set. It would hang a
+  user for that long before failing.
 - **The LLM provider is a free-tier router** (`openrouter/free`), chosen
   after two dead ends with paid/blocked providers (see below). Expect
   ~70s latency and don't expect a fixed model identity from run to run --
