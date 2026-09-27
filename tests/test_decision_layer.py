@@ -246,6 +246,19 @@ def test_each_claim_is_asked_with_the_source_and_the_claim():
     dl.run_evidence_check(_STATE, _PRED, fake)
     state, question = fake.calls[0]
     assert "glucose: 10.1 mmol/L" in state and "glucose is 10.1 mmol/L" in question
+    assert question == dl.build_question("glucose is 10.1 mmol/L")
+
+
+def test_the_question_and_options_follow_the_model_cards_worked_example():
+    assert dl.build_question("X.") == (
+        "Does the evidence support this answer to the question? Question: "
+        "What does the case record or the cited literature say? Answer: X."
+    )
+    assert [(o.key, o.description) for o in dl.CLAIM_OPTIONS] == [
+        ("supported", "The evidence supports the answer."),
+        ("contradicted", "The evidence contradicts the answer."),
+        ("not_enough_information", "The evidence does not provide enough information to support or refute the answer."),
+    ]
 
 
 def test_a_failure_part_way_keeps_what_was_checked_and_never_raises():

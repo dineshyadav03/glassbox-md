@@ -105,11 +105,20 @@ class DecisionBackend(Protocol):
         """Probability of each option key (sums to 1). Raises DecisionError."""
 
 
+# The option keys and descriptions, and the question template below, are the model card's own
+# worked example for judging an answer against evidence (the format the model was trained on),
+# not our wording. The claim takes the place of the "answer" and the question is a fixed,
+# generic one.
 CLAIM_OPTIONS = (
-    Option(SUPPORTED, "The source states or clearly implies the claim."),
-    Option(CONTRADICTED, "The source states something that conflicts with the claim."),
-    Option(NOT_ENOUGH, "The source neither supports nor contradicts the claim."),
+    Option(SUPPORTED, "The evidence supports the answer."),
+    Option(CONTRADICTED, "The evidence contradicts the answer."),
+    Option(NOT_ENOUGH, "The evidence does not provide enough information to support or refute the answer."),
 )
+CLAIM_QUESTION = "What does the case record or the cited literature say?"
+
+
+def build_question(claim: str) -> str:
+    return f"Does the evidence support this answer to the question? Question: {CLAIM_QUESTION} Answer: {claim}"
 
 
 # --- the backend: any OpenAI-compatible server that returns logprobs ---------------
@@ -305,7 +314,7 @@ def run_evidence_check(state: dict[str, Any], prediction: dict[str, Any], backen
 
     checks: list[dict[str, Any]] = []
     for item in claims:
-        question = f"Is the following claim supported by the source? Claim: {item['claim']}"
+        question = build_question(item["claim"])
         try:
             probabilities = backend.decide(source, question, CLAIM_OPTIONS)
         except Exception as exc:  # noqa: BLE001 -- the layer must never sink the report

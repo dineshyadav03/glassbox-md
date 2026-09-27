@@ -543,6 +543,17 @@ skipped; its published 87.9% is on a different benchmark; the two thresholds are
 untested defaults. The case text is sent to that server, which the upload prompt
 names.
 
+*Measuring it.* `claim_eval.py` builds 224 labelled claims from the 32 synthetic
+cases (supported, contradicted, or not stated; true by construction, run through
+the real Parser/Privacy/Prep stages so the source is what the diagnostic model
+sees), and scores any judge on accuracy, the dangerous error (a wrong claim judged
+"supported"), and calibration. Items are in `docs/comparison/claim-eval-items.jsonl`.
+`scripts/biodecision_score.py` is a standalone Transformers scorer (the model card's
+own code path) to run on any GPU box or, slowly, a CPU; `scripts/eval_claims.py`
+builds the items, scores through an OpenAI-compatible server, and writes the report.
+It measures reading and bookkeeping over templated claims, not whether a diagnostic
+model's reasoning is supported, so a good score is necessary and not sufficient.
+
 To run the UI (Phase 8), with `.env` filled in (`OPENROUTER_API_KEY` at
 minimum, or the local-model lines above):
 
