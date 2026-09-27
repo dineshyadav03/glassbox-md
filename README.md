@@ -499,8 +499,29 @@ This fetches PubMed abstracts for the project's six target conditions
 and indexes them into `data/literature/chroma/`. Takes a few minutes;
 safe to re-run.
 
+**Choosing the model.** Either OpenRouter (the default: set
+`OPENROUTER_API_KEY`) or a model on your own machine. To use MedGemma 1.5
+(4B) through Ollama, so a case never leaves the machine:
+
+```bash
+ollama pull medgemma1.5:4b          # ~3.3 GB
+```
+
+then in `.env`: `LLM_BASE_URL=http://localhost:11434/v1`,
+`OPENROUTER_MODEL=medgemma1.5:4b`, `LLM_TIMEOUT_SECONDS=600`. The upload prompt
+states which is active. What to expect: on a CPU-only laptop a case with an
+image takes roughly 1-1.5 minutes (about half of it encoding the image), the
+model needs ~4 GB of free RAM, and it kept valid JSON in every one of ~500
+measured calls (the free route did not; see `docs/imaging-comparison.md`).
+Two cautions: a case can occasionally run away (no output cap; see Known
+limitations), and Ollama's app may listen on all network interfaces -- check
+its "expose to the network" setting. MedGemma is released under Google's
+Health AI Developer Foundations terms; **read their Prohibited Use Policy
+before anything is shipped** -- this project only uses it for research and
+education, on synthetic data.
+
 To run the UI (Phase 8), with `.env` filled in (`OPENROUTER_API_KEY` at
-minimum):
+minimum, or the local-model lines above):
 
 ```bash
 chainlit run app.py -w
