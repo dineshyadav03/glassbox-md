@@ -801,7 +801,8 @@ def test_the_audit_summary_reports_the_new_entity_types_without_values():
 
     update = privacy_protection_agent(state)
 
-    entry_text = str(update["audit_log"][0])
+    # The summary only: the entry also carries a timestamp, which can contain any digits.
+    entry_text = update["audit_log"][0]["summary"]
     assert "AGE_BAND:1" in entry_text and "DATE:1" in entry_text
     assert "03/14/2021" not in entry_text and "52" not in entry_text
     history = update["anonymized_patient_data"]["history_text"]
