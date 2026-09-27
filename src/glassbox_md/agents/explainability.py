@@ -50,6 +50,12 @@ run over incompatible feature spaces on unrelated data, and manufacturing
 a cross-check between them would itself be a technically-incorrect
 comparison dressed up as insight.
 
+An optional third channel, off unless configured: `decision_layer.py` asks a small
+judge model whether each supporting-evidence claim is supported by the case text
+and the retrieved passages, and adds an `evidence_checks` section and, on a
+contradiction or an unconfirmed top condition, a flag. It is advisory: it never
+alters the differential and a failure in it never sinks the report.
+
 Clinician confirmation (`clinician_confirmed`) always starts False here.
 This agent produces a report for review, not a released result --
 setting it True is a UI/human action (Phase 8), never something an agent
@@ -68,6 +74,7 @@ from sklearn.datasets import load_diabetes
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import train_test_split
 
+from .. import decision_layer
 from ..audit import audit_entry
 from ..state import Citation, ExplainableReport, MedicalPipelineState, update_stage_status
 
@@ -181,9 +188,16 @@ def _build_shap_demo() -> dict[str, Any]:
     return _shap_demo_cache
 
 
-def explainability_agent(state: MedicalPipelineState) -> dict[str, Any]:
+def explainability_agent(
+    state: MedicalPipelineState, decision_backend: decision_layer.DecisionBackend | None = None
+) -> dict[str, Any]:
     """The LangGraph node. Reads `diagnostic_prediction_result` and
-    `rag_literature_context`, writes `final_explainable_report`."""
+    `rag_literature_context`, writes `final_explainable_report`.
+
+    `decision_backend` is the optional evidence-check judge (decision_layer.py);
+    None falls back to whatever the environment configures, which is nothing by
+    default. It can add a flag and an `evidence_checks` section to the report; it
+    never changes the differential, and a failure in it never sinks the report."""
     prediction = state.get("diagnostic_prediction_result")
     if not prediction:
         return {
@@ -208,6 +222,19 @@ def explainability_agent(state: MedicalPipelineState) -> dict[str, Any]:
         # citations are the load-bearing part of this agent's output.
         shap_reference = None
 
+    backend = decision_backend if decision_backend is not None else decision_layer.backend_from_env()
+    evidence: dict[str, Any] | None = None
+    if backend is not None and differential:
+        try:
+            evidence = decision_layer.run_evidence_check(dict(state), prediction, backend)
+        except Exception as exc:  # noqa: BLE001 -- run_evidence_check never raises; belt and braces
+            evidence = {
+                "checker": getattr(backend, "name", "decision model"),
+                "checked": [], "counts": decision_layer._tally([]), "flagged": False, "flag_reasons": [],
+                "note": decision_layer.ADVISORY_NOTE, "error": f"{type(exc).__name__}: {exc}",
+            }
+    evidence_flagged = bool(evidence and evidence["flagged"])
+
     report: ExplainableReport = {
         "narrative": narrative,
         "citations": resolved_citations,
@@ -216,14 +243,22 @@ def explainability_agent(state: MedicalPipelineState) -> dict[str, Any]:
         "disagreement_flagged": disagreement,
         "clinician_confirmed": False,
     }
+    if evidence is not None:
+        report["evidence_checks"] = evidence
 
+    messages = []
+    if disagreement:
+        messages.append("differential shows low separation between top hypotheses, or upstream abstention")
+    if evidence_flagged:
+        messages.append("evidence check: " + "; ".join(evidence["flag_reasons"]))
     status = {
-        "status": "needs_review" if disagreement else "ok",
-        "message": "differential shows low separation between top hypotheses, or upstream abstention" if disagreement else None,
+        "status": "needs_review" if (disagreement or evidence_flagged) else "ok",
+        "message": " | ".join(messages) if messages else None,
     }
     summary = (
         f"assembled explainable report; {len(resolved_citations)} citation(s) resolved"
         + ("; disagreement flagged" if disagreement else "")
+        + (f"; {decision_layer.summarize(evidence)}" if evidence is not None else "")
     )
 
     return {

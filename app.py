@@ -64,7 +64,7 @@ from dotenv import load_dotenv
 from chainlit.config import config as chainlit_config
 from chainlit.server import app as chainlit_server_app
 
-from glassbox_md import auth, case_store
+from glassbox_md import auth, case_store, decision_layer
 from glassbox_md.agents.diagnostic_prediction import backend_description
 from glassbox_md.case_store import CaseRecord
 from glassbox_md.origin_guard import OriginGuard
@@ -212,6 +212,12 @@ async def _start_new_case_upload() -> None:
             "**text printed on an image -- a name, a date, an ID -- is not removed**, and a "
             "photographed report is treated as an image, not read as a lab report.\n\n"
             f"Text and images will be analysed by: {backend_description()}."
+            + (
+                "\n\nAn advisory evidence check (a research-only model, text only) will read the case "
+                f"text and the model's supporting claims using: {decision_layer.backend_description()}."
+                if decision_layer.backend_description()
+                else ""
+            )
         ),
         accept={
             "application/pdf": [".pdf"],

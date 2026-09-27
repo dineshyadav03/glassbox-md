@@ -48,6 +48,7 @@ from .agents.document_parser import STAGE_NAME as PARSER_STAGE
 from .agents.document_parser import document_parser_agent
 from .agents.explainability import STAGE_NAME as EXPLAIN_STAGE
 from .agents.explainability import explainability_agent
+from .decision_layer import DecisionBackend
 from .agents.medical_knowledge_rag import STAGE_NAME as RAG_STAGE
 from .agents.medical_knowledge_rag import medical_knowledge_rag_agent
 from .agents.privacy_protection import STAGE_NAME as PRIVACY_STAGE
@@ -73,13 +74,17 @@ def _route_on_failure(stage_name: str, next_stage: str):
 
 
 def build_pipeline_graph(
-    llm_caller: LLMCaller | None = None, rag_collection: Any | None = None
+    llm_caller: LLMCaller | None = None,
+    rag_collection: Any | None = None,
+    decision_backend: DecisionBackend | None = None,
 ):
     """Compile the six-agent pipeline. `llm_caller` and `rag_collection`
     are forwarded to the Diagnostic Prediction and Medical Knowledge RAG
     agents respectively -- pass fakes here for a fully offline test of
     the whole graph, or leave both None to use the real OpenRouter call
-    and the real persisted ChromaDB index.
+    and the real persisted ChromaDB index. `decision_backend` is the optional
+    evidence-check judge for the report step (see decision_layer.py); None means
+    "whatever the environment configures", which is nothing by default.
     """
     graph = StateGraph(MedicalPipelineState)
 
@@ -89,7 +94,7 @@ def build_pipeline_graph(
         PREP_STAGE: data_preparation_agent,
         RAG_STAGE: partial(medical_knowledge_rag_agent, collection=rag_collection),
         PREDICTION_STAGE: partial(diagnostic_prediction_agent, llm_caller=llm_caller),
-        EXPLAIN_STAGE: explainability_agent,
+        EXPLAIN_STAGE: partial(explainability_agent, decision_backend=decision_backend),
     }
     for name, fn in nodes.items():
         graph.add_node(name, fn)

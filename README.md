@@ -87,7 +87,11 @@ narrower, and it is worth being exact about which parts are real.
   "cleidocranial dysplasia" on a normal film), and its stated confidence
   was no higher on correct answers than on incorrect ones.
 - *Citations are retrieved, not verified.* The literature is real, but
-  nothing checks that a paper supports the claim it sits next to.
+  nothing checks that a paper supports the claim it sits next to. An optional
+  evidence check (off by default, see "Evidence check" under Setup) asks a
+  small judge model whether each supporting claim is supported by the case
+  text and the retrieved passages. That is a second model's opinion, labelled
+  advisory, not a verification, and it has not been measured on this project.
 - *The SHAP demo is not about the case.* It explains a random forest
   trained on scikit-learn's public diabetes dataset, to show the technique.
   It says nothing about why the model answered this patient the way it did,
@@ -422,6 +426,7 @@ healthcare/
 │   ├── auth.py                opt-in login (salted PBKDF2) + refuse-to-serve-unprotected startup gate
 │   ├── origin_guard.py        ASGI middleware: rejects cross-origin HTTP and websocket requests
 │   ├── pipeline.py             wires all six agents into one LangGraph StateGraph (done)
+│   ├── decision_layer.py       optional advisory evidence check of the model's claims by a judge model (BioDecision-4B)
 │   ├── image_io.py             PNG/JPG validation by content; rebuilds every image from its pixels (no EXIF/text/ICC)
 │   ├── imaging_eval.py         real-image evaluation: sampling, scoring, Wilson CIs, report (done)
 │   ├── imaging_compare.py      paired comparison of two imaging-eval arms (McNemar, calibration, JSON validity)
@@ -519,6 +524,24 @@ its "expose to the network" setting. MedGemma is released under Google's
 Health AI Developer Foundations terms; **read their Prohibited Use Policy
 before anything is shipped** -- this project only uses it for research and
 education, on synthetic data.
+
+**Evidence check (optional, off by default).** A second, small model can read
+each supporting-evidence claim the diagnostic model wrote and say whether the
+case text and the retrieved passages support it, contradict it, or say nothing
+(`decision_layer.py`). It uses BioDecision-4B, which returns a probability per
+option in one forward pass. It needs an OpenAI-compatible server that returns
+logprobs (for example `vllm serve lighteternal/biodecision-tev1-4b` on a GPU);
+there is no Ollama build, and it does not fit alongside MedGemma on a 16 GB
+CPU-only laptop, so it is untested against the real weights here. Set
+`DECISION_BASE_URL` (see `.env.example`) to switch it on. What it may do: add a
+section to the report and flag the case (a claim for the top condition is
+contradicted, or none is confirmed). What it may not: change the differential,
+likelihoods or confidence, or remove a flag; if it is unreachable the report is
+built as before and says so. Limits, from its model card and ours: research-use
+licence and "not validated for patient care"; text only, so an image-only case is
+skipped; its published 87.9% is on a different benchmark; the two thresholds are
+untested defaults. The case text is sent to that server, which the upload prompt
+names.
 
 To run the UI (Phase 8), with `.env` filled in (`OPENROUTER_API_KEY` at
 minimum, or the local-model lines above):

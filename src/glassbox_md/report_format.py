@@ -7,7 +7,9 @@ narrower than "explainable": the reasoning shown is the model's own account
 of itself, its confidence is self-reported and was not calibrated (the
 imaging evaluation found it no higher on correct answers than on wrong
 ones), the literature is retrieved rather than verified to support any
-claim, and the SHAP figures come from a public dataset, not from this case.
+claim (the optional evidence check, decision_layer.py, adds an advisory second
+opinion and says it is one), and the SHAP figures come from a public dataset,
+not from this case.
 Each label below says so at the point where it could be misread. Internal
 field names (`final_explainable_report`, `shap_reference`, ...) are left
 alone -- they are persisted in saved cases.
@@ -42,6 +44,45 @@ def _answered_by(prediction: dict[str, Any]) -> str | None:
     if name == DEFAULT_MODEL_NAME:
         return f"`{name}` (a router alias -- the model that actually answered was not recorded)"
     return f"`{name}`"
+
+
+_VERDICT_ICON = {
+    "supported": "✅ supported",
+    "contradicted": "❌ contradicted",
+    "not_enough_information": "❔ not confirmed",
+    "uncertain": "❓ uncertain",
+}
+
+
+def _evidence_section(evidence: dict[str, Any]) -> list[str]:
+    """The optional evidence check (decision_layer.py), worded as advisory: a small
+    research-only text model's opinion of each claim, not a verification."""
+    checker = evidence.get("checker", "decision model")
+    if evidence.get("skipped"):
+        return ["", f"**Evidence check ({checker}):** not run -- {evidence['skipped']}."]
+
+    counts = evidence.get("counts") or {}
+    checked = evidence.get("checked") or []
+    not_confirmed = counts.get("not_enough_information", 0) + counts.get("uncertain", 0)
+    lines = [
+        "",
+        f"**Evidence check ({checker}, advisory):** {counts.get('supported', 0)} of {len(checked)} claim(s) "
+        f"confirmed by the case text and retrieved passages, {not_confirmed} not confirmed, "
+        f"{counts.get('contradicted', 0)} contradicted.",
+    ]
+    for item in checked:
+        probs = item.get("probabilities") or {}
+        p = probs.get(item["verdict"])
+        shown = f" (p={p:.2f})" if p is not None else ""
+        lines.append(f"- {_VERDICT_ICON.get(item['verdict'], item['verdict'])}{shown} -- {item['condition']}: {item['claim']}")
+    if evidence.get("error"):
+        lines.append(f"- The check stopped early: {evidence['error']}")
+    if evidence.get("flagged"):
+        lines.append("")
+        lines.append("⚠️ **Evidence check flagged this case:** " + "; ".join(evidence.get("flag_reasons") or []) + ".")
+    lines.append("")
+    lines.append(f"*{evidence.get('note', '')}*")
+    return lines
 
 
 def build_report_markdown(report: dict[str, Any], prediction: dict[str, Any]) -> str:
@@ -93,6 +134,9 @@ def build_report_markdown(report: dict[str, Any], prediction: dict[str, Any]) ->
         lines.append("**Retrieved literature** (real PubMed records; nothing here verifies that they support the answer):")
         for citation in report["citations"]:
             lines.append(f"- [{citation['title']}]({citation['url']})")
+
+    if report.get("evidence_checks"):
+        lines.extend(_evidence_section(report["evidence_checks"]))
 
     if report["disagreement_flagged"]:
         lines.append("")

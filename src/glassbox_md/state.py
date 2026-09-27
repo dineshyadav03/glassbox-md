@@ -94,6 +94,9 @@ class ExplainableReport(TypedDict):
     shap_reference: str | None
     disagreement_flagged: bool
     clinician_confirmed: bool
+    # Present only when the optional evidence check ran (decision_layer.py); absent
+    # from reports saved before it existed and from every run with it switched off.
+    evidence_checks: NotRequired[dict[str, Any] | None]
 
 
 class MedicalPipelineState(TypedDict):
