@@ -65,6 +65,7 @@ from chainlit.config import config as chainlit_config
 from chainlit.server import app as chainlit_server_app
 
 from glassbox_md import auth, case_store
+from glassbox_md.agents.diagnostic_prediction import backend_description
 from glassbox_md.case_store import CaseRecord
 from glassbox_md.origin_guard import OriginGuard
 from glassbox_md.disclaimer import INTENDED_USE_DISCLAIMER
@@ -205,10 +206,19 @@ async def _start_new_case_upload() -> None:
     files = await cl.AskFileMessage(
         content=(
             "Upload one or more patient documents to run through the pipeline: "
-            "a lab-report/history PDF and/or a DICOM imaging file.\n\n"
-            "**Synthetic or de-identified test data only -- never real patient records.**"
+            "a lab-report/history PDF and/or imaging -- a DICOM file or a PNG/JPG image.\n\n"
+            "**Synthetic or de-identified test data only -- never real patient records.**\n\n"
+            "Images are sent to the model as pixels only (metadata such as EXIF is dropped), but "
+            "**text printed on an image -- a name, a date, an ID -- is not removed**, and a "
+            "photographed report is treated as an image, not read as a lab report.\n\n"
+            f"Text and images will be analysed by: {backend_description()}."
         ),
-        accept={"application/pdf": [".pdf"], "application/dicom": [".dcm"]},
+        accept={
+            "application/pdf": [".pdf"],
+            "application/dicom": [".dcm"],
+            "image/png": [".png"],
+            "image/jpeg": [".jpg", ".jpeg"],
+        },
         max_files=5,
         max_size_mb=25,
         timeout=300,
@@ -221,8 +231,8 @@ async def _start_new_case_upload() -> None:
     await cl.Message(
         content=(
             "Running the 6-agent pipeline. Steps 1-4 are usually done in a couple of "
-            "seconds; if the case reaches step 5, that's a real call to a free-tier "
-            "model and can take up to ~90 seconds -- that's expected, not a hang."
+            "seconds; if the case reaches step 5, that's a real call to the model "
+            "and can take a minute or two -- that's expected, not a hang."
         ),
         author="System",
     ).send()

@@ -18,6 +18,13 @@ with no ML dependency at all. If this project is ever pointed at real
 scanned documents, swap the implementation of `parse_pdf()` for one backed
 by Docling -- the `ParsedDocument` contract below doesn't have to change.
 
+PNG and JPEG images are a third, separate path (`parse_image`, backed by
+`image_io.py`): validated by content, reported as a shape/dtype summary like
+DICOM, and never read for metadata -- EXIF, PNG text chunks and ICC profiles
+are not put in the state. Nothing here reads text out of an image (no OCR): a
+photographed lab report is imaging, not a lab report, so its values are not
+extracted and any name printed on it is not redacted. See image_io.py.
+
 Design note: DICOM pixel data is extracted as a shape/dtype summary here,
 not as the raw array, so large binary imaging data never enters the
 LangGraph state dict. That mirrors the same concern the architecture
@@ -38,6 +45,7 @@ import pdfplumber
 import pydicom
 from pydicom.valuerep import PersonName
 
+from .. import image_io
 from ..audit import audit_entry
 from ..state import MedicalPipelineState, update_stage_status
 
@@ -48,7 +56,7 @@ Table = list[list[str | None]]
 
 class ParsedDocument(TypedDict):
     source_path: str
-    kind: Literal["pdf", "dicom"]
+    kind: Literal["pdf", "dicom", "image"]
     text: str
     tables: list[Table]
     dicom_metadata: dict[str, Any] | None
@@ -74,6 +82,7 @@ class UnsupportedFileTypeError(ValueError):
 
 _PDF_EXTENSIONS = {".pdf"}
 _DICOM_EXTENSIONS = {".dcm", ".dicom", ""}  # DICOM files often carry no extension
+_IMAGE_EXTENSIONS = image_io.IMAGE_EXTENSIONS
 
 
 def parse_pdf(path: str) -> ParsedDocument:
@@ -126,6 +135,22 @@ def parse_dicom(path: str) -> ParsedDocument:
     )
 
 
+def parse_image(path: str) -> ParsedDocument:
+    """Validate a PNG/JPEG by content and summarise its pixels. Returns structure
+    only (format, shape, dtype) -- no EXIF or other metadata value, so none can
+    enter the pipeline state. Raises `image_io.ImageError` for a file that is not
+    a readable PNG/JPEG."""
+    summary = image_io.inspect_image(path)
+    return ParsedDocument(
+        source_path=path,
+        kind="image",
+        text="",
+        tables=[],
+        dicom_metadata=None,
+        pixel_summary=summary,
+    )
+
+
 def _stringify(value: Any) -> Any:
     """DICOM element values include types (PersonName, MultiValue, bytes)
     that don't round-trip through the rest of the pipeline cleanly --
@@ -148,6 +173,8 @@ def _dispatch(path: str) -> ParsedDocument:
     extension = Path(path).suffix.lower()
     if extension in _PDF_EXTENSIONS:
         return parse_pdf(path)
+    if extension in _IMAGE_EXTENSIONS:
+        return parse_image(path)
     if extension in _DICOM_EXTENSIONS:
         return parse_dicom(path)
     raise UnsupportedFileTypeError(f"no parser registered for extension {extension!r}")

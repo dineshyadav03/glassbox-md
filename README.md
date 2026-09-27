@@ -107,7 +107,7 @@ actually supports the claim it is attached to.
 
 ```mermaid
 flowchart TD
-    IN["PDF / DICOM upload"] --> P1
+    IN["PDF / DICOM / PNG / JPG upload"] --> P1
     P1["1 · Document Parser<br/>pdfplumber + pydicom"] -->|failed| END1(("halt"))
     P1 --> P2["2 · Privacy Protection<br/>Presidio + spaCy NER"]
     P2 -->|failed| END2(("halt"))
@@ -422,12 +422,13 @@ healthcare/
 │   ├── auth.py                opt-in login (salted PBKDF2) + refuse-to-serve-unprotected startup gate
 │   ├── origin_guard.py        ASGI middleware: rejects cross-origin HTTP and websocket requests
 │   ├── pipeline.py             wires all six agents into one LangGraph StateGraph (done)
+│   ├── image_io.py             PNG/JPG validation by content; rebuilds every image from its pixels (no EXIF/text/ICC)
 │   ├── imaging_eval.py         real-image evaluation: sampling, scoring, Wilson CIs, report (done)
 │   ├── imaging_compare.py      paired comparison of two imaging-eval arms (McNemar, calibration, JSON validity)
 │   ├── text_eval.py            32 synthetic lab/history cases with known answers, scorer and runner
 │   └── agents/
 │       ├── data_preparation.py   unit conversion + terminology normalization (done)
-│       ├── document_parser.py    PDF (pdfplumber) + DICOM (pydicom), separate paths (done)
+│       ├── document_parser.py    PDF (pdfplumber), DICOM (pydicom), PNG/JPG (Pillow): three separate paths (done)
 │       ├── privacy_protection.py NER redaction, lab extraction, DICOM tag stripping (done)
 │       ├── redaction_policy.py   what date-like text is kept, banded or typed; BP and clinical-term fixes
 │       ├── medical_knowledge_rag.py PubMed fetch + ChromaDB index/query (done)
@@ -506,8 +507,10 @@ chainlit run app.py -w
 ```
 
 `-w` enables auto-reload on file changes. Opens at `http://localhost:8000`.
-Upload a lab-report/history PDF and/or a DICOM file to run it through
-the pipeline; each agent renders as its own step as it completes.
+Upload a lab-report/history PDF and/or imaging -- a DICOM file or a PNG/JPG
+image -- to run it through the pipeline; each agent renders as its own step as
+it completes. The upload prompt says where the case will be analysed (this
+machine, or OpenRouter) and that text printed on an image is not removed.
 
 ## Deployment checklist
 
@@ -538,10 +541,13 @@ a network as-is. What exists, and what doesn't:
   are not per-user: anyone who can log in sees every case.
 - Saved cases (`data/cases/cases.db`) and Chainlit's uploaded files
   (`.files/`) sit unencrypted on disk.
-- Third-party data flow: the redacted text **and the DICOM pixel data** go
-  to OpenRouter and whichever provider its router picks, with no BAA.
-  Redaction covers text and DICOM metadata, not image pixels. This is why
-  the disclaimer forbids real patient data.
+- Third-party data flow: with the default OpenRouter route, the redacted
+  text **and the image pixels** (DICOM, PNG or JPG) go to OpenRouter and
+  whichever provider its router picks, with no BAA. Redaction covers text and
+  DICOM metadata, not image pixels. This is why the disclaimer forbids real
+  patient data. Running the model locally (`LLM_BASE_URL`, see `.env.example`)
+  keeps the case off third-party servers; the upload prompt states which of
+  the two is active.
 - Free-tier quotas: OpenRouter's free models allow 50 requests a day, which
   the imaging evaluation exhausted in one sitting.
 
@@ -619,6 +625,15 @@ shouldn't have to read thirty bullet points to find the honest gaps:
   count risks payload-size/latency problems on an already-slow (~70s)
   free-tier call; exceeding it is noted in the audit log, not silently
   truncated. See Design decisions below.
+- **Plain images are pixels only, and their text is not read or removed.**
+  A PNG/JPG is validated by content (a renamed PDF is refused), capped at 40
+  megapixels, and rebuilt from its pixels before it reaches a model, so EXIF
+  (GPS, device, capture time, author), PNG text chunks and ICC profiles never
+  travel. But there is no OCR and no pixel redaction: a screenshot or a
+  photographed report with a name printed on it keeps the name, and its lab
+  values are *not* extracted -- it is treated as imaging, not as a lab report.
+  Scanned PDFs have the same OCR gap. Photos and screenshots are exactly where
+  burned-in identifiers live, so this is a bigger risk than it is for DICOM.
 - **The model call has no output cap.** In the validation run one case
   (a normal-panel control) made local MedGemma 1.5 generate 4,500+ tokens
   without stopping, against a normal 300-500, and the request timed out

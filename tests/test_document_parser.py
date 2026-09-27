@@ -154,3 +154,77 @@ def test_agent_preserves_other_stages_status():
     result = document_parser_agent(state)
 
     assert result["stage_status"]["data_preparation"] == {"status": "ok", "message": None}
+
+
+# --- PNG / JPEG images ---------------------------------------------------------------
+
+from PIL import Image as _PILImage
+
+from glassbox_md.agents.document_parser import parse_image
+
+_PHI = "Jane Q. Patient"
+
+
+def _image_with_phi(tmp_path, name):
+    path = tmp_path / name
+    if name.lower().endswith((".jpg", ".jpeg")):
+        exif = _PILImage.Exif()
+        exif[0x013B] = _PHI
+        _PILImage.new("RGB", (20, 10), (5, 5, 5)).save(path, format="JPEG", exif=exif)
+    else:
+        from PIL import PngImagePlugin
+
+        info = PngImagePlugin.PngInfo()
+        info.add_text("Author", _PHI)
+        _PILImage.new("RGB", (20, 10), (5, 5, 5)).save(path, format="PNG", pnginfo=info)
+    return str(path)
+
+
+@pytest.mark.parametrize("name", ["scan.png", "scan.jpg", "scan.jpeg", "SCAN.PNG", "SCAN.JPG"])
+def test_parse_image_returns_an_image_document_with_structure_only(tmp_path, name):
+    doc = parse_image(_image_with_phi(tmp_path, name))
+    assert doc["kind"] == "image"
+    assert doc["text"] == "" and doc["tables"] == [] and doc["dicom_metadata"] is None
+    assert doc["pixel_summary"]["shape"] == (10, 20, 3)
+    assert doc["pixel_summary"]["dtype"] == "uint8"
+    assert _PHI not in repr(doc)
+
+
+def test_agent_dispatches_png_and_jpeg_by_extension(tmp_path):
+    state = _base_state(raw_input_paths=[_image_with_phi(tmp_path, "a.png"), _image_with_phi(tmp_path, "b.jpg")])
+    result = document_parser_agent(state)
+    kinds = [d["kind"] for d in result["extracted_document_content"]["documents"]]
+    assert kinds == ["image", "image"]
+    assert result["stage_status"]["document_parser"]["status"] == "ok"
+    assert _PHI not in repr(result)  # nothing from the metadata reaches the state or the audit log
+
+
+def test_agent_parses_pdf_dicom_and_image_together(sample_pdf, sample_dicom, tmp_path):
+    state = _base_state(raw_input_paths=[sample_pdf, sample_dicom, _image_with_phi(tmp_path, "x.jpg")])
+    result = document_parser_agent(state)
+    assert [d["kind"] for d in result["extracted_document_content"]["documents"]] == ["pdf", "dicom", "image"]
+
+
+def test_a_pdf_renamed_to_png_is_a_parse_error_not_a_crash(tmp_path, sample_pdf):
+    fake = tmp_path / "fake.png"
+    fake.write_bytes(open(sample_pdf, "rb").read())
+    result = document_parser_agent(_base_state(raw_input_paths=[str(fake), sample_pdf]))
+    errors = result["extracted_document_content"]["parse_errors"]
+    assert len(errors) == 1 and errors[0]["source_path"] == str(fake)
+    assert "ImageError" in errors[0]["error"]
+    assert result["stage_status"]["document_parser"]["status"] == "needs_review"
+
+
+def test_a_corrupt_image_alone_fails_the_stage_cleanly(tmp_path):
+    bad = tmp_path / "bad.jpg"
+    bad.write_bytes(b"\xff\xd8\xff\xe0not really a jpeg")
+    result = document_parser_agent(_base_state(raw_input_paths=[str(bad)]))
+    assert result["stage_status"]["document_parser"]["status"] == "failed"
+
+
+def test_an_unsupported_image_type_is_still_an_error(tmp_path):
+    path = tmp_path / "scan.gif"
+    _PILImage.new("P", (4, 4)).save(path, format="GIF")
+    result = document_parser_agent(_base_state(raw_input_paths=[str(path)]))
+    assert result["extracted_document_content"]["parse_errors"][0]["source_path"] == str(path)
+    assert "UnsupportedFileTypeError" in result["extracted_document_content"]["parse_errors"][0]["error"]

@@ -81,7 +81,9 @@ turning it into something a clinician can actually audit is Phase 6's job.
 
 Imaging is best-effort and multi-file, not single-file. DICOM pixel data
 is converted to PNG for the multimodal prompt when available
-(`_dicom_to_png_bytes`), reading from each imaging entry's `source_path`
+(`_dicom_to_png_bytes`), and a PNG/JPG is rebuilt from its pixels
+(`image_io.sanitized_png_bytes`, so no EXIF or other metadata is sent),
+reading from each imaging entry's `source_path`
 -- the same path the Privacy agent already documented as not
 pixel-defaced (a stated V2 limitation, not new scope creep here). Every
 uploaded image is attached, up to `MAX_IMAGES_PER_CALL` -- an earlier
@@ -114,6 +116,7 @@ from openai import (
 from pydantic import BaseModel, Field, PrivateAttr, ValidationError
 from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 
+from .. import image_io
 from ..audit import audit_entry
 from ..state import Citation, MedicalPipelineState, update_stage_status
 
@@ -294,16 +297,16 @@ def _load_image_for_prompt(source_path: str) -> tuple[bytes, str] | None:
     PNG as needed. None if the file can't be turned into prompt-ready
     image data."""
     extension = Path(source_path).suffix.lower()
+    if extension in image_io.IMAGE_EXTENSIONS:
+        # Never the file's own bytes: re-encoded from pixels so EXIF/PNG text/ICC
+        # never reach the model request. See image_io.py.
+        try:
+            return image_io.sanitized_png_bytes(source_path), "image/png"
+        except Exception:
+            return None
     if extension in (".dcm", ".dicom", ""):
         png_bytes = _dicom_to_png_bytes(source_path)
         return (png_bytes, "image/png") if png_bytes else None
-    if extension in (".png", ".jpg", ".jpeg"):
-        try:
-            data = Path(source_path).read_bytes()
-        except OSError:
-            return None
-        mime = "image/png" if extension == ".png" else "image/jpeg"
-        return data, mime
     return None
 
 
@@ -414,6 +417,22 @@ def _call_openrouter(
         raise
     response._served_by = getattr(completion, "model", None) or None
     return response
+
+
+def backend_description() -> str:
+    """Where the de-identified text and any images are sent, in words for the
+    user: this machine, another server, or OpenRouter. Read at call time from the
+    same environment `_default_caller` uses, so it cannot drift from what happens."""
+    from urllib.parse import urlsplit
+
+    model = os.environ.get(MODEL_ENV_VAR, DEFAULT_MODEL_NAME)
+    base_url = os.environ.get(BASE_URL_ENV_VAR)
+    if not base_url:
+        return f"OpenRouter, a third-party service (model: {model})"
+    host = (urlsplit(base_url).hostname or "").lower()
+    if host in ("localhost", "127.0.0.1", "::1"):
+        return f"a model running on this machine ({model}); the case data is not sent to a third party"
+    return f"an external server at {host or base_url} (model: {model})"
 
 
 def _default_caller(prompt: str, image_paths: list[str]) -> ModelDifferentialResponse:

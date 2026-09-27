@@ -17,7 +17,7 @@ verified explanation of how it reached the answer.
 Each stage below runs as its own step in the trace so you can see what
 each stage did:
 
-1. **Document Parser** -- extracts text/tables from PDFs, metadata from DICOM
+1. **Document Parser** -- extracts text/tables from PDFs and metadata from DICOM; accepts PNG/JPG images (pixels only, no text is read from them)
 2. **Privacy Protection** -- redacts identifying information, extracts structured lab values
 3. **Data Preparation** -- normalizes units and terminology
 4. **Medical Knowledge RAG** -- retrieves relevant literature (type 2 diabetes, coronary artery disease, hyperlipidemia, hypertension, chronic kidney disease, hypothyroidism)

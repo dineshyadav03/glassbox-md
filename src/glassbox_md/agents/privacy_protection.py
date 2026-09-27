@@ -619,6 +619,7 @@ def privacy_protection_agent(state: MedicalPipelineState) -> dict[str, Any]:
     imaging: list[dict[str, Any]] = []
     redaction_counts: dict[str, int] = defaultdict(int)
     stripped_tags: set[str] = set()
+    plain_images = 0
 
     for document in documents:
         if document["kind"] == "pdf":
@@ -628,7 +629,11 @@ def privacy_protection_agent(state: MedicalPipelineState) -> dict[str, Any]:
                 history_parts.append(redacted_text)
             for entity_type, count in counts.items():
                 redaction_counts[entity_type] += count
-        elif document["kind"] == "dicom":
+        elif document["kind"] in ("dicom", "image"):
+            # A plain image has no DICOM metadata (the parser never reads EXIF), so
+            # this yields {} for it; the pixels are re-encoded metadata-free when they
+            # are sent to the model (image_io.sanitized_png_bytes).
+            plain_images += document["kind"] == "image"
             cleaned_metadata, removed = strip_dicom_phi_tags(document.get("dicom_metadata") or {})
             imaging.append(
                 {
@@ -650,6 +655,12 @@ def privacy_protection_agent(state: MedicalPipelineState) -> dict[str, Any]:
     summary = (
         f"redacted {total_redactions} PII entity occurrence(s) ({entity_breakdown}); "
         f"stripped {len(stripped_tags)} DICOM tag(s) across {len(imaging)} image(s)"
+        + (
+            f"; {plain_images} PNG/JPEG file(s) carried through as pixels only "
+            "(metadata not read; text burned into the image is NOT redacted)"
+            if plain_images
+            else ""
+        )
     )
 
     update = {
