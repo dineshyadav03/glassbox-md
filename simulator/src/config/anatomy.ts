@@ -290,3 +290,11 @@ export function pathOffsetOf(vessel: VesselId): number {
 export function childrenOf(parent: VesselId): VesselSpec[] {
   return VESSEL_ORDER.map((id) => VESSELS[id]).filter((spec) => spec.parent === parent);
 }
+
+/** Rules that apply to any catheter riding over the wire. */
+export const CATHETER = {
+  /** The balloon or stent's distal end must stay at least this far behind the wire tip, mm. */
+  clearanceBehindWireMm: 1,
+  /** A balloon must overlap at least this fraction of the lesion to count as "across" it. */
+  acrossLesionFraction: 0.8,
+} as const;
