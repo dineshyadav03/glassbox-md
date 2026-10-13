@@ -36,6 +36,7 @@ import {
 import { createGuide, describeGuideEvent, facesLeftCusp, guideCheckpoints, stepGuide, type GuideEvent, type GuideState } from '../physics/guide';
 import {
   lesionReferenceDiameter,
+  lumenDiameterAt,
   referenceDiameterAt,
   worstResidualStenosis,
   type Treatment,
@@ -158,6 +159,8 @@ export interface Latches {
 }
 
 export interface QcaReading {
+  /** Minimum lumen diameter across the lesion, mm. */
+  readonly mldMm: number;
   readonly referenceDiameterMm: number;
   readonly lesionLengthMm: number;
   readonly stenosis: number;
@@ -631,12 +634,23 @@ export function act(sim: Simulation, action: Action): Simulation {
         say(draft, result.reason ?? 'Measuring is not available yet.', 'warn');
         return draft;
       }
-      const reading: QcaReading = { referenceDiameterMm: lesionReferenceDiameter(), lesionLengthMm: LESION.length, stenosis: LESION.diameterStenosis };
+      // Measured on the artery as it is now, so measuring again after a balloon or stent shows the result.
+      const treatments = treatmentsOf(sim);
+      let mld = Infinity;
+      for (let s = LESION.centreS - LESION.length / 2; s <= LESION.centreS + LESION.length / 2 + 1e-9; s += 0.25) {
+        mld = Math.min(mld, lumenDiameterAt(LESION.vessel, s, treatments));
+      }
+      const reading: QcaReading = {
+        mldMm: mld,
+        referenceDiameterMm: lesionReferenceDiameter(),
+        lesionLengthMm: LESION.length,
+        stenosis: worstResidualStenosis(treatments),
+      };
       draft.qca = reading;
       draft.latch = { ...sim.latch, qca: true };
       say(
         draft,
-        `Measured: reference diameter ${reading.referenceDiameterMm.toFixed(2)} mm, lesion length ${reading.lesionLengthMm} mm, stenosis ${Math.round(reading.stenosis * 100)}%.`,
+        `Measured: reference diameter ${reading.referenceDiameterMm.toFixed(2)} mm, minimum lumen ${reading.mldMm.toFixed(2)} mm, lesion length ${reading.lesionLengthMm} mm, stenosis ${Math.round(reading.stenosis * 100)}%.`,
         'info',
       );
       return draft;

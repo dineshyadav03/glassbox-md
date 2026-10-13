@@ -24,7 +24,7 @@ export const YOU_WILL: readonly string[] = [
 
 /** [keys, what they do], from the specification. */
 export const CONTROLS: readonly (readonly [string, string])[] = [
-  ['1 to 7', 'Select tool: guide, wire, balloon, stent, contrast, fluoro pedal, measure'],
+  ['1 to 7', 'Select tool: guide, wire, balloon, stent, contrast, fluoro pedal, measure (7 again toggles hovering an artery in 3D for its diameter)'],
   ['W / S or wheel', 'Advance / retract the selected device (Shift for fine movement)'],
   ['A / D', 'Rotate the device tip'],
   ['E (hold) / Q', 'Inflate / deflate the balloon or stent (Shift for fine control)'],

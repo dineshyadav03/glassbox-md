@@ -397,6 +397,15 @@ describe('the patient and the balloon', () => {
 });
 
 describe('measuring and sizing', () => {
+  it('reads the minimum lumen diameter, and measuring again after a stent shows the opened artery', () => {
+    const before = playGoodCase({ stopAfterWire: true });
+    expect(before.sim.qca!.mldMm).toBeCloseTo(0.297, 2);
+    const after = playGoodCase({ oneFinalView: true }).do({ type: 'measure' });
+    expect(after.sim.qca!.mldMm).toBeGreaterThan(2.5);
+    expect(after.sim.qca!.stenosis).toBeLessThan(0.15);
+    expect(after.sim.qca!.referenceDiameterMm).toBeCloseTo(2.97, 2);
+  });
+
   it('reads the reference diameter and lesion length off the angiogram', () => {
     const p = playGoodCase({ stopAfterWire: true });
     expect(p.sim.qca!.referenceDiameterMm).toBeCloseTo(2.97, 2);

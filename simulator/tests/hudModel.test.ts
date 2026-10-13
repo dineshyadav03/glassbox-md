@@ -135,7 +135,7 @@ describe('readouts', () => {
   it('reads the measurement once it has been taken, and the stent coverage', () => {
     expect(qcaReadout(createSimulation())).toBeNull();
     const p = playGoodCase({ stopAfterWire: true });
-    expect(qcaReadout(p.sim)).toMatch(/2\.97 mm.*14 mm.*90%/);
+    expect(qcaReadout(p.sim)).toMatch(/2\.97 mm, MLD 0\.29 mm, lesion 14 mm, 90% stenosis/);
     expect(coverageReadout(p.sim)).toBeNull();
     const done = playGoodCase();
     expect(coverageReadout(done.sim)).toMatch(/Covers the lesion/);

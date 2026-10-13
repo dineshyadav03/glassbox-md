@@ -47,6 +47,8 @@ export interface HudHandlers {
 }
 
 export interface HudFlags {
+  /** Measuring: hovering an artery in the 3D view reads out its diameter. */
+  readonly measure: boolean;
   readonly demo: { readonly on: boolean; readonly speed: number };
   readonly view: '3d' | 'xray';
   readonly paused: boolean;
@@ -63,6 +65,8 @@ export interface Hud {
   /** Where overlays (debrief) go. */
   readonly overlays: HTMLElement;
   update(sim: Simulation, flags: HudFlags, dt: number): void;
+  /** Show the hover read-out near (x, y) inside the stage, or hide it with null. */
+  setMeasureTip(lines: readonly string[] | null, x: number, y: number): void;
 }
 
 function button(text: string, className = 'secondary', title?: string): HTMLButtonElement {
@@ -132,6 +136,8 @@ export function createHud(handlers: HudHandlers): Hud {
 
   // --- the stage and its small toolbar ----------------------------------------------------------------------
   const stage = el('div', { className: 'stage' });
+  const measureTip = el('div', { className: 'measure-tip hidden', attrs: { role: 'status' } });
+  stage.append(measureTip);
   const frameHeart = button('Frame heart');
   const frameRoute = button('Whole route');
   const labelsButton = button('Labels (L)');
@@ -297,6 +303,19 @@ export function createHud(handlers: HudHandlers): Hud {
     root,
     stage,
     overlays,
+    setMeasureTip(lines: readonly string[] | null, x: number, y: number): void {
+      if (!lines) {
+        setClass(measureTip, 'hidden', true);
+        return;
+      }
+      measureTip.replaceChildren(...lines.map((line, i) => el('div', { className: i === 0 ? 'tip-title' : '', text: line })));
+      const width = stage.clientWidth;
+      const left = x + 16 + 220 > width ? x - 16 - 220 : x + 16;
+      measureTip.style.left = `${Math.max(4, left)}px`;
+      measureTip.style.top = `${Math.max(4, y + 14)}px`;
+      setClass(measureTip, 'hidden', false);
+    },
+
     update(sim: Simulation, flags: HudFlags, dt: number): void {
       setText(clock, timeString(sim.time));
       setText(carm, carmReadout(sim));
@@ -339,7 +358,9 @@ export function createHud(handlers: HudHandlers): Hud {
         setClass(node, 'active', t.active);
         setClass(node, 'locked', !t.available);
         node.setAttribute('aria-disabled', String(!t.available));
-        node.setAttribute('aria-pressed', String(t.active));
+        const active = t.active || (t.id === 'measure' && flags.measure);
+        setClass(node, 'active', active);
+        node.setAttribute('aria-pressed', String(active));
         node.title = t.available ? '' : (t.reason ?? '');
       }
       setClass(heparinButton, 'done', sim.patient.heparinGiven);

@@ -6,6 +6,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { PHYSIOLOGY } from '../config/anatomy';
+import { measureSamples } from './measure';
 import type { LabelAnchor } from '../anatomy/labels';
 import type { Vec3 } from '../anatomy/vec3';
 import type { AnatomyScene } from './anatomyScene';
@@ -22,6 +23,11 @@ export interface ViewerOptions {
   readonly onWheel?: (deltaY: number) => void;
   /** Heart rate for the beat animation, beats per minute. */
   readonly beatsPerMinute?: () => number;
+  /**
+   * While picking is on: the point on a coronary artery under the pointer, in the heart's own frame (the frame the
+   * vessel centrelines are in), with the pointer's position inside the view in pixels; null when it is over none.
+   */
+  readonly onPick?: (point: Vec3 | null, x: number, y: number) => void;
 }
 
 export interface Viewer {
@@ -33,6 +39,8 @@ export interface Viewer {
   readonly labelsVisible: boolean;
   /** Stop drawing (and positioning labels) while something else, such as the X-ray image, covers the view. */
   setRendering(on: boolean): void;
+  /** Report the artery under the pointer through `onPick` (used while measuring). */
+  setPicking(on: boolean): void;
   dispose(): void;
 }
 
@@ -82,6 +90,7 @@ export function createViewer(container: HTMLElement, anatomy: AnatomyScene, opti
   });
   let showLabels = true;
   let rendering = true;
+  let picking = false;
   const raycaster = new THREE.Raycaster();
   const scratch = new THREE.Vector3();
   const direction = new THREE.Vector3();
@@ -209,6 +218,41 @@ export function createViewer(container: HTMLElement, anatomy: AnatomyScene, opti
   };
   frame = requestAnimationFrame(loop);
 
+  // Picking: the nearest point on an artery's centreline within a few pixels of the pointer. (A raycast against the
+  // vessel itself would almost never land on the 0.3 mm pinch of the lesion, the very place worth measuring.)
+  const PICK_RADIUS_PX = 14;
+  const samples = measureSamples();
+  const world = new THREE.Vector3();
+  const ndcPoint = new THREE.Vector3();
+  const onPointerMove = (event: PointerEvent): void => {
+    if (!picking || !options.onPick) return;
+    const rect = renderer.domElement.getBoundingClientRect();
+    const x = event.clientX - rect.left;
+    const y = event.clientY - rect.top;
+    anatomy.root.updateMatrixWorld();
+    camera.updateMatrixWorld();
+    let best: (typeof samples)[number] | null = null;
+    let bestDistance = PICK_RADIUS_PX;
+    for (const sample of samples) {
+      world.set(sample.p[0], sample.p[1], sample.p[2]).applyMatrix4(anatomy.beating.matrixWorld);
+      ndcPoint.copy(world).project(camera);
+      if (ndcPoint.z < -1 || ndcPoint.z > 1) continue;
+      const d = Math.hypot(((ndcPoint.x + 1) / 2) * rect.width - x, ((1 - ndcPoint.y) / 2) * rect.height - y);
+      if (d >= bestDistance) continue;
+      // Skip a point that is behind the heart as seen from here.
+      const toPoint = world.clone().sub(camera.position);
+      raycaster.set(camera.position, toPoint.clone().normalize());
+      raycaster.far = toPoint.length() - 2;
+      if (raycaster.intersectObject(anatomy.heartMesh, false).length > 0) continue;
+      bestDistance = d;
+      best = sample;
+    }
+    options.onPick(best ? best.p : null, x, y);
+  };
+  const onPointerLeave = (): void => options.onPick?.(null, 0, 0);
+  renderer.domElement.addEventListener('pointermove', onPointerMove);
+  renderer.domElement.addEventListener('pointerleave', onPointerLeave);
+
   // A drag by the user cancels a camera move in progress.
   const cancelMove = (): void => {
     move = null;
@@ -245,10 +289,16 @@ export function createViewer(container: HTMLElement, anatomy: AnatomyScene, opti
     setRendering(on: boolean): void {
       rendering = on;
     },
+    setPicking(on: boolean): void {
+      picking = on;
+      if (!on) options.onPick?.(null, 0, 0);
+    },
     dispose(): void {
       cancelAnimationFrame(frame);
       observer.disconnect();
       renderer.domElement.removeEventListener('pointerdown', cancelMove);
+      renderer.domElement.removeEventListener('pointermove', onPointerMove);
+      renderer.domElement.removeEventListener('pointerleave', onPointerLeave);
       renderer.domElement.removeEventListener('wheel', onWheel);
       controls.dispose();
       anatomy.dispose();

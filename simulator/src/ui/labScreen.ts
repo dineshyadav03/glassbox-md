@@ -7,9 +7,10 @@ import { buildAnatomyScene } from '../scene/anatomyScene';
 import { focusPoint, suggestedDistance } from '../scene/deviceMath';
 import { createDeviceView } from '../scene/devices';
 import { createViewer } from '../scene/viewer';
+import { measureAtPoint, measurementLines } from '../scene/measure';
 import { createXrayDisplay } from '../xray/display';
 import { advanceDemo, createPilot, type PilotState } from '../demo/autopilot';
-import { act, createSimulation, tick, type Action, type Simulation } from '../engine/simulation';
+import { act, createSimulation, tick, treatmentsOf, type Action, type Simulation } from '../engine/simulation';
 import { createDebrief } from './debriefScreen';
 import { el } from './dom';
 import { createHud, type HudFlags } from './hud';
@@ -34,6 +35,7 @@ export function renderLabScreen(root: HTMLElement, onBack: () => void, options: 
   let sim: Simulation = createSimulation();
   let pilot: PilotState | null = options.demo ? createPilot() : null;
   let flags: HudFlags = {
+    measure: false,
     demo: { on: pilot !== null, speed: 1 },
     view: '3d',
     paused: false,
@@ -71,9 +73,22 @@ export function renderLabScreen(root: HTMLElement, onBack: () => void, options: 
   };
 
   const apply = (action: Action): void => {
+    const hadReading = sim.qca !== null;
     sim = act(sim, action);
+    if (action.type === 'measure' && sim.qca) {
+      // The first measurement switches the hover read-out on; pressing again switches it off and on.
+      flags = { ...flags, measure: hadReading ? !flags.measure : true };
+      updatePicking();
+    }
     refocus();
   };
+
+  /** The hover read-out only works on the 3D view while measuring. */
+  function updatePicking(): void {
+    const on = flags.measure && flags.view === '3d';
+    viewer?.setPicking(on);
+    if (!on) hud.setMeasureTip(null, 0, 0);
+  }
 
   /** Hand the case back to the person: the autopilot stops and whatever it was holding is released. */
   const takeOver = (): void => {
@@ -106,6 +121,7 @@ export function renderLabScreen(root: HTMLElement, onBack: () => void, options: 
         flags = { ...flags, view };
         xray.element.classList.toggle('hidden', view !== 'xray');
         viewer?.setRendering(view === '3d');
+        updatePicking();
         break;
       }
       case 'toggle-help':
@@ -209,6 +225,14 @@ export function renderLabScreen(root: HTMLElement, onBack: () => void, options: 
     followPoint: () => (flags.follow && !flags.paused ? focusPoint(sim) : null),
     onWheel: (deltaY) => input.wheel(deltaY, performance.now()),
     beatsPerMinute: () => monitorView(sim).heartRate,
+    onPick: (point, x, y) => {
+      if (!point || !flags.measure) {
+        hud.setMeasureTip(null, 0, 0);
+        return;
+      }
+      const m = measureAtPoint(point, treatmentsOf(sim));
+      hud.setMeasureTip(m ? measurementLines(m) : null, x, y);
+    },
   });
 
   if (!viewer) {

@@ -152,6 +152,8 @@
 .xray { position: absolute; inset: 0; z-index: 3; background: #000; display: flex; align-items: center; justify-content: center; }
 .xray-canvas { max-width: 100%; max-height: 100%; width: auto; height: 100%; aspect-ratio: 1 / 1; display: block; }
 .view-tools { z-index: 5; }
+.measure-tip { position: absolute; z-index: 6; width: 220px; padding: 6px 9px; border: 1px solid var(--accent); border-radius: 6px; background: rgba(13, 17, 23, 0.92); font-size: 0.82rem; line-height: 1.4; pointer-events: none; }
+.measure-tip .tip-title { font-weight: 700; color: var(--accent); }
 .demo-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 6px 10px; border: 1px solid var(--warn); border-radius: 6px; background: rgba(217, 164, 65, 0.1); }
 .demo-badge { background: var(--warn); color: #1a1405; font-weight: 700; padding: 1px 10px; border-radius: 10px; letter-spacing: 0.08em; }
 .demo-hint { flex: 1 1 260px; font-size: 0.86rem; }

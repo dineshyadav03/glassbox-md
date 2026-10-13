@@ -270,7 +270,7 @@ export function coverageReadout(sim: Simulation): string | null {
 
 export function qcaReadout(sim: Simulation): string | null {
   if (!sim.qca) return null;
-  return `Reference ${sim.qca.referenceDiameterMm.toFixed(2)} mm, lesion ${sim.qca.lesionLengthMm} mm, ${Math.round(sim.qca.stenosis * 100)}% stenosis.`;
+  return `Reference ${sim.qca.referenceDiameterMm.toFixed(2)} mm, MLD ${sim.qca.mldMm.toFixed(2)} mm, lesion ${sim.qca.lesionLengthMm} mm, ${Math.round(sim.qca.stenosis * 100)}% stenosis.`;
 }
 
 export function carmReadout(sim: Simulation): string {
