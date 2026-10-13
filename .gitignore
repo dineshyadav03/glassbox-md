@@ -52,3 +52,8 @@ desktop.ini
 # Local Claude Code / preview-tool config. launch.json held an absolute path
 # under a personal home directory, so it is not tracked.
 .claude/
+
+# Node (simulator/)
+node_modules/
+*.tsbuildinfo
+.vite/

@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Cath Lab: PCI Simulator (educational)</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #0d1117;
+        --panel: #161b22;
+        --ink: #e6edf3;
+        --muted: #9aa7b4;
+        --accent: #3fb6a8;
+        --warn: #d9a441;
+      }
+      * { box-sizing: border-box; }
+      html, body { margin: 0; background: var(--bg); color: var(--ink); }
+      body { font: 16px/1.5 system-ui, -apple-system, 'Segoe UI', sans-serif; overflow-x: hidden; }
+      .start { max-width: 760px; margin: 0 auto; padding: 24px 16px 48px; }
+      h1 { font-size: 1.7rem; margin: 0 0 12px; }
+      h2 { font-size: 1.05rem; margin: 28px 0 8px; color: var(--accent); }
+      .disclaimer {
+        margin: 0 0 8px; padding: 12px 14px; background: var(--panel);
+        border-left: 4px solid var(--warn); border-radius: 4px;
+      }
+      .controls { display: grid; grid-template-columns: max-content 1fr; gap: 6px 16px; margin: 0; }
+      .controls dt { font-family: ui-monospace, Consolas, monospace; color: var(--accent); }
+      .controls dd { margin: 0; color: var(--muted); }
+      .status { margin-top: 28px; color: var(--muted); font-size: 0.92rem; }
+      .actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 16px; }
+      button {
+        font: inherit; padding: 10px 18px; border-radius: 6px; border: 1px solid var(--accent);
+        background: var(--accent); color: #05110f; cursor: pointer;
+      }
+      button.secondary { background: transparent; color: var(--accent); }
+      button:disabled { opacity: 0.45; cursor: not-allowed; }
+      @media (max-width: 480px) {
+        .controls { grid-template-columns: 1fr; }
+        .controls dd { margin-bottom: 8px; }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
