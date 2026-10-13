@@ -302,4 +302,7 @@ export const CATHETER = {
   clearanceBehindWireMm: 1,
   /** A balloon must overlap at least this fraction of the lesion to count as "across" it. */
   acrossLesionFraction: 0.8,
+  /** How fast a balloon or stent catheter slides over the wire, mm/s (fine control for each is the slower value). */
+  advanceSpeed: 20,
+  fineAdvanceSpeed: 5,
 } as const;
