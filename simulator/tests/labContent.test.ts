@@ -34,7 +34,7 @@ describe('lab text', () => {
 
   it('says plainly what is not built yet', () => {
     expect(LAB_LIMITS.toLowerCase()).toContain('not built yet');
-    expect(LAB_LIMITS).toMatch(/demo/);
+    expect(LAB_LIMITS).not.toMatch(/demo/);
     expect(LAB_LIMITS).toMatch(/sound/);
     expect(LAB_LIMITS).toMatch(/simplified/);
   });

@@ -2,16 +2,20 @@ import type { Debrief } from '../procedure/evaluation';
 import type { Simulation } from '../engine/simulation';
 import { el } from './dom';
 import { timeString } from './hudModel';
-import { GRADE_CLASS, STATUS_WORD } from './labContent';
+import { GRADE_CLASS, KEEP_EXPLORING, STATUS_WORD } from './labContent';
 
 export interface DebriefHandlers {
   readonly onRestart: () => void;
   readonly onBack: () => void;
+  /** Close the debrief and look around the finished case. */
+  readonly onKeep: () => void;
 }
 
 /** The scored debrief, as an overlay. Text only, never innerHTML. */
 export function createDebrief(debrief: Debrief, sim: Simulation, handlers: DebriefHandlers): HTMLElement {
-  const restart = el('button', { text: 'Run the case again' });
+  const keep = el('button', { className: 'secondary', text: KEEP_EXPLORING });
+  keep.addEventListener('click', handlers.onKeep);
+  const restart = el('button', { text: 'New case' });
   const back = el('button', { className: 'secondary', text: 'Back to the start screen' });
   restart.addEventListener('click', handlers.onRestart);
   back.addEventListener('click', handlers.onBack);
@@ -40,7 +44,7 @@ export function createDebrief(debrief: Debrief, sim: Simulation, handlers: Debri
     el('p', { className: 'debrief-meta', text: `Case time ${timeString(sim.time)} · contrast ${Math.round(sim.contrastMl)} ml · fluoroscopy ${(sim.fluoroSeconds / 60).toFixed(1)} min` }),
     el('ul', { className: 'debrief-items' }, items),
     el('p', { className: 'debrief-note', text: 'These thresholds and weights are teaching choices in a simplified model. They are not clinical standards.' }),
-    el('div', { className: 'actions' }, [restart, back]),
+    el('div', { className: 'actions' }, [keep, restart, back]),
   ]);
   return el('div', { className: 'overlay debrief' }, [panel]);
 }

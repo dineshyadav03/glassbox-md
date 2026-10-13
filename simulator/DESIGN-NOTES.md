@@ -133,8 +133,30 @@ pipeline: no case data goes in, nothing comes out, and no report links to it.
   Frame rate and feel on a real GPU, and the look on other browsers (the blur uses canvas filters, which Safari lacks, so
   soft tissue would look sharper there), have not been checked.
 
+## Phase 5: the demo and the complications
+
+- **The autopilot is an input source, not a back door.** `pilotStep` sees the simulation and answers with held controls and
+  button presses (the same `Controls` and `Action`s as a person); `advanceDemo` applies them with the same `act` and `tick`.
+  It never edits state. The one extra action is `narrate`, which only adds a "Demo:" line to the mentor log.
+- **Its plan is data.** `GOOD_PLAN` is the brief's case (2.5 x 15 balloon, 10 atm, about 12 s; 3.0 x 18 stent, 12 atm). The
+  same script given an oversized stent plays the specification's deliberately bad case, which a test uses.
+- **It is checked, not assumed.** A test runs the demo at 0.016, 0.05 and 0.25 s frames and requires an Excellent 100 each time,
+  no instability, 24 ml of contrast, under a minute of fluoroscopy and no wire forcing; the real lab was also run through the
+  whole demo in a browser with no console errors.
+- **Hand-back.** Any keydown, pointerdown or wheel (captured before anything else sees it) stops the pilot and releases what it
+  held, except presses on the demo's own buttons. The press is then handled normally, so pressing W carries straight on.
+- **Speed.** 1x, 2x or 4x scales the time given to the pilot; its decisions still happen every 0.05 s of case time.
+- **Staining.** The specification asks for "lingering contrast staining beside the lumen" on fluoro. An unsealed tear draws a
+  smudge beside the vessel once dye reaches it; unlike dye in the lumen it does not wash out during the run, so the held
+  angiogram still shows it. A sealed tear draws none.
+- **Complications were mostly already in the engine** (Phase 1 and 3). Phase 5 added the staining, and tests that name the
+  specification's cases: oversized stent at high pressure gives a dissection, reduced flow and Needs work.
+- **HUD items from the specification that Phase 3 had missed** were added: fluoroscopy time and contrast in the top bar, an End
+  case button, the six steps with completion times (the newest flashes), a toast strip for the latest message, and "Keep
+  exploring / New case" on the debrief. Still missing: the hover diameter read-out in 3D while measuring.
+
 ## Not done yet
 
-Sound, and the demo autopilot. The specification's "demo ends with an Excellent debrief" is therefore only
+Sound, and the hover diameter read-out in 3D while measuring. The specification's "demo ends with an Excellent debrief" is therefore only
 tested at the logic level (`tests/scenario.test.ts`), by chaining the real modules for a good case and for the
 bad case.

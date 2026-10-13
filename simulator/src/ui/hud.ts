@@ -19,13 +19,16 @@ import {
   pressureAdvice,
   qcaReadout,
   sizeOptions,
+  stageList,
   stageView,
   timeString,
+  toastView,
   toolButtons,
+  usageReadout,
 } from './hudModel';
 import type { HoldButton } from './input';
 import type { UiCommand } from './input';
-import { END_CASE_WARNING, LAB_DISCLAIMER, LAB_LIMITS, LAB_TITLE, LAB_TOUCH_HINT, PAUSE_TEXT } from './labContent';
+import { DEMO_BADGE, DEMO_HINT, END_CASE_WARNING, LAB_DISCLAIMER, LAB_LIMITS, LAB_TITLE, LAB_TOUCH_HINT, PAUSE_TEXT } from './labContent';
 import { createMonitor } from './monitor';
 
 export interface HudHandlers {
@@ -37,9 +40,14 @@ export interface HudHandlers {
   readonly onFrameRoute: () => void;
   readonly onEndCase: () => void;
   readonly onBack: () => void;
+  /** The demo's speed buttons (1, 2 or 4 times). */
+  readonly onDemoSpeed: (speed: number) => void;
+  /** The Take control button of the demo. */
+  readonly onTakeOver: () => void;
 }
 
 export interface HudFlags {
+  readonly demo: { readonly on: boolean; readonly speed: number };
   readonly view: '3d' | 'xray';
   readonly paused: boolean;
   readonly labels: boolean;
@@ -82,13 +90,44 @@ export function createHud(handlers: HudHandlers): Hud {
   const helpButton = button('Help (H)');
   const pauseButton = button('Pause (Esc)');
   const backButton = button('Leave');
+  const endButton = button('End case', 'secondary', 'Finish now and see the debrief (scored as incomplete)');
   helpButton.addEventListener('click', () => handlers.onUi('toggle-help'));
   pauseButton.addEventListener('click', () => handlers.onUi('pause'));
   backButton.addEventListener('click', handlers.onBack);
+  endButton.addEventListener('click', handlers.onEndCase);
+  const fluoroUsed = el('span', { className: 'lab-clock', text: '0:00' });
+  const contrastUsed = el('span', { className: 'lab-clock', text: '0 ml' });
+
+  // The demo's own controls. They are marked so that using them does not count as taking over.
+  const demoSpeeds = [1, 2, 4].map((n) => {
+    const b = button(`${n}x`, 'secondary', `Run the demo at ${n} times speed`);
+    b.dataset.demoControl = 'true';
+    b.addEventListener('click', () => handlers.onDemoSpeed(n));
+    return { n, b };
+  });
+  const takeOver = button('Take control', 'primary', 'Stop the demo and carry on yourself (any key, click or wheel does the same)');
+  takeOver.dataset.demoControl = 'true';
+  takeOver.addEventListener('click', handlers.onTakeOver);
+  const demoBar = el('div', { className: 'demo-bar hidden', attrs: { role: 'status' } }, [
+    el('span', { className: 'demo-badge', text: DEMO_BADGE }),
+    el('span', { className: 'demo-hint', text: DEMO_HINT }),
+    ...demoSpeeds.map((x) => x.b),
+    takeOver,
+  ]);
+
   const bar = el('header', { className: 'lab-bar' }, [
     el('div', { className: 'lab-bar-title' }, [el('h1', { text: LAB_TITLE }), el('p', { className: 'lab-disclaimer', text: LAB_DISCLAIMER })]),
-    el('div', { className: 'lab-bar-status' }, [el('span', { className: 'lab-label', text: 'Case time' }), clock, el('span', { className: 'lab-label', text: 'C-arm' }), carm]),
-    el('div', { className: 'lab-bar-buttons' }, [helpButton, pauseButton, backButton]),
+    el('div', { className: 'lab-bar-status' }, [
+      el('span', { className: 'lab-label', text: 'Case time' }),
+      clock,
+      el('span', { className: 'lab-label', text: 'Fluoro' }),
+      fluoroUsed,
+      el('span', { className: 'lab-label', text: 'Contrast' }),
+      contrastUsed,
+      el('span', { className: 'lab-label', text: 'C-arm' }),
+      carm,
+    ]),
+    el('div', { className: 'lab-bar-buttons' }, [helpButton, pauseButton, endButton, backButton]),
   ]);
 
   // --- the stage and its small toolbar ----------------------------------------------------------------------
@@ -104,6 +143,8 @@ export function createHud(handlers: HudHandlers): Hud {
   labelsButton.addEventListener('click', () => handlers.onUi('toggle-labels'));
   followButton.addEventListener('click', () => handlers.onUi('toggle-follow'));
   const viewTools = el('div', { className: 'view-tools' }, [viewButton, frameHeart, frameRoute, labelsButton, followButton]);
+
+  const toast = el('p', { className: 'toast hidden', attrs: { role: 'status' } });
 
   // --- the tool bar ---------------------------------------------------------------------------------------------
   const toolNodes = new Map<string, HTMLButtonElement>();
@@ -212,7 +253,8 @@ export function createHud(handlers: HudHandlers): Hud {
   const hint = el('p', { className: 'hint' });
   const whyText = el('p', { className: 'why' });
   const why = el('details', { className: 'why-box' }, [el('summary', { text: 'Why this step?' }), whyText]);
-  const stagePanel = el('section', { className: 'panel stage-panel' }, [stageTitle, progress, stageGoal, taskList, hint, why]);
+  const stageRows = el('ol', { className: 'stage-list', attrs: { 'aria-label': 'All six steps' } });
+  const stagePanel = el('section', { className: 'panel stage-panel' }, [stageTitle, progress, stageGoal, taskList, hint, why, stageRows]);
 
   const monitor = createMonitor();
 
@@ -240,13 +282,16 @@ export function createHud(handlers: HudHandlers): Hud {
 
   const root = el('main', { className: 'lab' }, [
     bar,
-    el('div', { className: 'lab-main' }, [el('section', { className: 'lab-view' }, [el('div', { className: 'stage-wrap' }, [stage, viewTools]), toolBar, carmPanel, toolPanel]), side]),
+    demoBar,
+    el('div', { className: 'lab-main' }, [el('section', { className: 'lab-view' }, [el('div', { className: 'stage-wrap' }, [stage, viewTools]), toast, toolBar, carmPanel, toolPanel]), side]),
     overlays,
   ]);
 
   // --- per-frame update ----------------------------------------------------------------------------------------------
   let stageSignature = '';
   let mentorSignature = '';
+  let rowSignature = '';
+  let doneCount = 0;
 
   return {
     root,
@@ -255,6 +300,34 @@ export function createHud(handlers: HudHandlers): Hud {
     update(sim: Simulation, flags: HudFlags, dt: number): void {
       setText(clock, timeString(sim.time));
       setText(carm, carmReadout(sim));
+      const usage = usageReadout(sim);
+      setText(fluoroUsed, usage.fluoro);
+      setText(contrastUsed, usage.contrast);
+      setClass(demoBar, 'hidden', !flags.demo.on);
+      for (const x of demoSpeeds) setClass(x.b, 'on', flags.demo.speed === x.n);
+      const note = toastView(sim);
+      setClass(toast, 'hidden', note === null);
+      if (note) {
+        setText(toast, note.text);
+        toast.className = `toast ${note.level}`;
+      }
+      const rows = stageList(sim);
+      const rowKey = rows.map((r) => `${r.done ? r.time : r.current ? 'c' : '-'}`).join('|');
+      if (rowKey !== rowSignature) {
+        rowSignature = rowKey;
+        const finished = rows.filter((r) => r.done).length;
+        const justFinished = finished > doneCount;
+        doneCount = finished;
+        stageRows.replaceChildren(
+          ...rows.map((r, i) =>
+            el('li', { className: `${r.done ? 'done' : r.current ? 'current' : ''}${justFinished && r.done && i === finished - 1 ? ' flash' : ''}` }, [
+              el('span', { className: 'row-mark', text: r.done ? '✓' : r.current ? '▶' : '○' }),
+              el('span', { className: 'row-title', text: `${r.number}. ${r.title}` }),
+              el('span', { className: 'row-time', text: r.time }),
+            ]),
+          ),
+        );
+      }
       setText(carmReadoutText, `LAO ${Math.round(sim.carmAngles.laoDeg)}°  CRA ${Math.round(sim.carmAngles.cranialDeg)}°`);
       const presetIndex = CARM_PRESETS.findIndex((p) => p.laoDeg === sim.carmAngles.laoDeg && p.cranialDeg === sim.carmAngles.cranialDeg);
       const wanted = presetIndex >= 0 ? String(presetIndex) : 'custom';

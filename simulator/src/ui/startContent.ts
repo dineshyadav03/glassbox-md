@@ -36,11 +36,11 @@ export const CONTROLS: readonly (readonly [string, string])[] = [
   ['F', 'Follow the device tip with the camera'],
   ['L', 'Toggle anatomy labels'],
   ['H / M / N', 'Help / mentor panel / sound (sound not built yet)'],
-  ['Esc', 'Pause'],
+  ['Esc', 'Pause (during the demo, any key, click or scroll takes control)'],
   ['Drag / Ctrl + wheel', 'Orbit / zoom the 3D camera (the plain wheel moves the selected device)'],
 ];
 
 /** Honest build status, shown on the screen so a half-built app never looks finished. */
 export const BUILD_STATUS =
   'Build status: the lab is playable end to end: all six steps, the devices, the 3D and X-ray views with a movable C-arm, ' +
-  'the patient monitor and the scored debrief. The demo mode and sound are not built yet, so the demo button is disabled.';
+  'the patient monitor, the scored debrief and a narrated demo. Sound is not built yet.';

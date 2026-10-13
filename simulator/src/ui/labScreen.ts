@@ -8,6 +8,7 @@ import { focusPoint, suggestedDistance } from '../scene/deviceMath';
 import { createDeviceView } from '../scene/devices';
 import { createViewer } from '../scene/viewer';
 import { createXrayDisplay } from '../xray/display';
+import { advanceDemo, createPilot, type PilotState } from '../demo/autopilot';
 import { act, createSimulation, tick, type Action, type Simulation } from '../engine/simulation';
 import { createDebrief } from './debriefScreen';
 import { el } from './dom';
@@ -20,13 +21,28 @@ import './lab.css';
 /** The longest slice of time given to the simulation in one step, seconds. */
 const MAX_STEP = 0.05;
 
+export interface LabOptions {
+  /** Start with the autopilot performing the case. Any key, click or wheel hands control back. */
+  readonly demo?: boolean;
+}
+
 /**
  * Show the lab in `root`. `onBack` is called when the user leaves; by then the renderer, the frame loop
  * and every listener have been released.
  */
-export function renderLabScreen(root: HTMLElement, onBack: () => void): void {
+export function renderLabScreen(root: HTMLElement, onBack: () => void, options: LabOptions = {}): void {
   let sim: Simulation = createSimulation();
-  let flags: HudFlags = { view: '3d', paused: false, labels: true, follow: true, help: false, mentor: true };
+  let pilot: PilotState | null = options.demo ? createPilot() : null;
+  let flags: HudFlags = {
+    demo: { on: pilot !== null, speed: 1 },
+    view: '3d',
+    paused: false,
+    labels: true,
+    follow: true,
+    help: false,
+    mentor: true,
+  };
+  let debrief: HTMLElement | null = null;
   let lastCameraKey = '';
   let debriefShown = false;
   let disposed = false;
@@ -39,6 +55,7 @@ export function renderLabScreen(root: HTMLElement, onBack: () => void): void {
     window.removeEventListener('keydown', onKeyDown);
     window.removeEventListener('keyup', onKeyUp);
     window.removeEventListener('blur', onBlur);
+    for (const type of ['keydown', 'pointerdown', 'wheel']) window.removeEventListener(type, interrupt, true);
     viewer?.dispose();
     devices.dispose();
     xray.dispose();
@@ -57,6 +74,22 @@ export function renderLabScreen(root: HTMLElement, onBack: () => void): void {
     sim = act(sim, action);
     refocus();
   };
+
+  /** Hand the case back to the person: the autopilot stops and whatever it was holding is released. */
+  const takeOver = (): void => {
+    if (!pilot) return;
+    pilot = null;
+    flags = { ...flags, demo: { ...flags.demo, on: false } };
+    input.releaseAll();
+  };
+
+  /** Any key, click or scroll hands control back, except presses on the demo's own buttons. */
+  function interrupt(event: Event): void {
+    if (!pilot) return;
+    const target = event.target;
+    if (target instanceof Element && target.closest('[data-demo-control]')) return;
+    takeOver();
+  }
 
   const runUi = (command: UiCommand): void => {
     switch (command) {
@@ -112,6 +145,10 @@ export function renderLabScreen(root: HTMLElement, onBack: () => void): void {
       apply({ type: 'end-case' });
     },
     onBack: leave,
+    onDemoSpeed: (speed) => {
+      flags = { ...flags, demo: { ...flags.demo, speed } };
+    },
+    onTakeOver: takeOver,
   });
   root.replaceChildren(hud.root);
 
@@ -133,6 +170,17 @@ export function renderLabScreen(root: HTMLElement, onBack: () => void): void {
 
   const step = (dt: number): void => {
     if (flags.paused || sim.ended || dt <= 0) return;
+    if (pilot) {
+      // The autopilot drives the very same engine, through the same controls and buttons.
+      const before = sim.tool;
+      ({ sim, pilot } = advanceDemo(sim, pilot, dt * flags.demo.speed));
+      if (sim.tool !== before) refocus();
+      if (sim.ended) {
+        pilot = null;
+        flags = { ...flags, demo: { ...flags.demo, on: false } };
+      }
+      return;
+    }
     const controls = input.controls(performance.now());
     const pieces = Math.max(1, Math.ceil(dt / MAX_STEP));
     for (let i = 0; i < pieces; i++) sim = tick(sim, controls, dt / pieces);
@@ -147,7 +195,15 @@ export function renderLabScreen(root: HTMLElement, onBack: () => void): void {
       if (sim.ended && sim.debrief && !debriefShown) {
         debriefShown = true;
         input.releaseAll();
-        hud.overlays.append(createDebrief(sim.debrief, sim, { onRestart: restart, onBack: leave }));
+        debrief = createDebrief(sim.debrief, sim, {
+          onRestart: restart,
+          onBack: leave,
+          onKeep: () => {
+            debrief?.remove();
+            debrief = null;
+          },
+        });
+        hud.overlays.append(debrief);
       }
     },
     followPoint: () => (flags.follow && !flags.paused ? focusPoint(sim) : null),
@@ -197,5 +253,6 @@ export function renderLabScreen(root: HTMLElement, onBack: () => void): void {
   window.addEventListener('keydown', onKeyDown);
   window.addEventListener('keyup', onKeyUp);
   window.addEventListener('blur', onBlur);
-
+  // Capture phase, so a press is noticed before anything else handles it.
+  for (const type of ['keydown', 'pointerdown', 'wheel']) window.addEventListener(type, interrupt, { capture: true, passive: true });
 }

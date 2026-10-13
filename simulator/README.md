@@ -47,7 +47,7 @@ server. Needs Node 20 or newer.
 | 2 | Procedural heart and vessels, 3D view | done: beating heart, six coronaries at true lumen, aorta, wrist-to-root route, labels, orbit camera |
 | 3 | Devices and the six-stage procedure UI | done: playable end to end with a scored debrief (see below for what is simplified) |
 | 4 | X-ray view and C-arm | done: live fluoroscopy, last-image hold, contrast cine and a movable C-arm |
-| 5 | Demo autopilot and complications | not started |
+| 5 | Demo autopilot and complications | done: narrated demo that ends on an Excellent debrief; tear staining on fluoro |
 | 6 | README polish, CI, deploy decision | not started |
 
 **What you can do today:** the whole case is playable in the browser. Press "Enter the cath lab" and work through
@@ -69,8 +69,21 @@ contrast run is acquired as a cine, and its best-filled frame is held as the ang
 arrow-key nudging (1 degree, Shift 5), and a panel; a second final angiogram counts only if its beam differs from the
 first by at least 20 degrees. The field of view follows the tip (wide for the arm, tight on the arteries).
 
-**What is not built:** the demo autopilot and sound. Contrast also still shows on the vessels in the 3D view, as a
-teaching aid. The start screen and the help panel say so.
+**The demo** ("Watch a demo first" on the start screen): an autopilot performs the whole case through the same
+engine, controls and buttons a learner uses, narrating each step in the mentor log under a DEMO badge, at 1x, 2x or 4x.
+It turns the guide to the left cusp, takes it up the arm with short fluoro taps, seats it, takes an angiogram, gives
+heparin, measures, steers the wire into the LAD and across the lesion slowly, runs a 2.5 x 15 balloon at 10 atm for about
+12 s, then a 3.0 x 18 stent at 12 atm, and finishes with angiograms from two projections. Any key, click or scroll hands
+control back. It ends on an Excellent (100) debrief, which the tests check at any frame rate.
+
+**Complications:** a wire forced through the lesion, or a balloon or stent over 1.2 times the vessel, tears the wall
+(a stent tears just beyond its end). A tear shows as a dark flap in 3D and, on fluoro, as a filling defect plus contrast
+staining beside the lumen that lingers while the dye washes out; it slows flow until a stent covers it. A balloon taken
+4 atm past its rated pressure bursts and may tear the wall. A long inflation makes the patient ischaemic and then
+unstable. An oversized stent at high pressure gives a dissection, reduced flow and a "Needs work" debrief.
+
+**What is not built:** sound. Contrast also still shows on the vessels in the 3D view, as a teaching aid. The start screen
+and the help panel say so. Also not built from the spec's HUD list: the hover diameter read-out in 3D while measuring.
 
 ## How the 3D part is organised
 
@@ -83,6 +96,7 @@ teaching aid. The start screen and the help panel say so.
 - `src/scene/devices.ts` draws the devices, dissection flaps and contrast from a `Simulation`; headless-safe.
 - `src/ui/hudModel.ts` computes everything each panel shows (tested); `hud.ts`, `gauges.ts`, `monitor.ts` and
   `debriefScreen.ts` only place it in the DOM; `input.ts` maps keys, on-screen holds and the wheel to controls.
+- `src/demo/autopilot.ts` is the demo: a pure state machine whose `advanceDemo` is used by both the screen and the tests.
 - `src/xray/` is the X-ray view: `projection.ts` (C-arm geometry), `frame.ts` (what the image contains, as shapes; tested)
   and `display.ts` (the canvas: noise, collimator, last-image hold, angiogram capture).
 - `src/scene/viewer.ts`, `src/xray/display.ts` and `src/ui/labScreen.ts` are the only code that touches WebGL, canvases,

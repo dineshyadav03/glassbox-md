@@ -3,17 +3,17 @@ import { BUILD_STATUS, CASE_VIGNETTE, CONTROLS, DISCLAIMER, TITLE, YOU_WILL } fr
 
 /**
  * Render the start screen into `root`. Text is set with textContent only, never innerHTML.
- * `onEnter` opens the lab.
+ * `onEnter` opens the lab; `onDemo` opens it with the autopilot performing the case.
  */
-export function renderStartScreen(root: HTMLElement, onEnter: () => void): void {
+export function renderStartScreen(root: HTMLElement, onEnter: () => void, onDemo: () => void): void {
   const disclaimer = el('p', { className: 'disclaimer', text: DISCLAIMER });
   disclaimer.setAttribute('role', 'note');
 
   const enter = el('button', { text: 'Enter the cath lab' });
   enter.addEventListener('click', onEnter);
   const demo = el('button', { className: 'secondary', text: 'Watch a demo first' });
-  demo.disabled = true;
-  demo.title = 'Not built yet';
+  demo.title = 'An autopilot performs the whole case, narrating each step. Press any key to take over.';
+  demo.addEventListener('click', onDemo);
 
   const controls = el(
     'dl',
