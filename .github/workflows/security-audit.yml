@@ -9,6 +9,7 @@ on:
     paths:
       - requirements.txt
       - requirements.lock.txt
+      - simulator/package-lock.json
       - .github/workflows/security-audit.yml
   workflow_dispatch:
 
@@ -42,3 +43,19 @@ jobs:
           --ignore-vuln PYSEC-2026-3813
           --ignore-vuln PYSEC-2026-3814
           --ignore-vuln PYSEC-2026-3815
+
+  # The simulator's npm dependencies (Three.js, Vite, Vitest, TypeScript). Only high and critical advisories
+  # fail the job; the build tools run on a developer machine or in CI and never ship to the browser.
+  npm-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+
+      - name: Audit the simulator's locked dependencies
+        run: npm audit --audit-level=high
+        working-directory: simulator

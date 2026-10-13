@@ -12,3 +12,13 @@ updates:
     directory: /
     schedule:
       interval: weekly
+
+  # The cath-lab simulator. Unlike pip, npm's package-lock.json is resolved by npm itself, so Dependabot's
+  # one-package-at-a-time updates keep it consistent; CI (typecheck, tests, build) is the safety net.
+  - package-ecosystem: npm
+    directory: /simulator
+    schedule:
+      interval: weekly
+    groups:
+      simulator-dev-tools:
+        dependency-type: development

@@ -42,9 +42,26 @@ See the README's [Setup](README.md#setup) section for the literature
 index build step (needed for the RAG agent) and how to run the Chainlit
 UI locally.
 
+## The cath-lab simulator
+
+`simulator/` is a separate TypeScript app (Vite, Three.js, Vitest) that the Glassbox app serves at `/cathlab/`. It
+needs Node 20 or newer and is not part of the Python install above:
+
+```bash
+cd simulator
+npm ci
+npm test            # unit tests
+npm run build       # typecheck + production build into simulator/dist
+npm run dev         # hot reload at http://localhost:5173/cathlab/
+```
+
+It is educational only and uses invented numbers, so please keep its disclaimer on the start screen, keep new
+constants in `simulator/src/config/anatomy.ts`, and keep rules in pure functions with a test. Nothing in it reads
+or writes patient data, and it is deliberately not connected to the diagnostic pipeline.
+
 ## Before opening a pull request
 
-- **Run the test suite**: `pytest`. All tests should pass; add new ones
+- **Run the test suite**: `pytest` (and `npm test` in `simulator/` if you touched it). All tests should pass; add new ones
   for new behavior rather than only checking it manually. CI runs the
   same suite on Python 3.11 and 3.13, against both `requirements.txt` and
   the lock file, so a failure there is usually a real one.

@@ -1,10 +1,29 @@
 # Cath Lab: PCI Simulator (educational)
 
-A browser-based **educational** simulator of percutaneous coronary intervention (PCI): stenting a 90%
-mid-LAD stenosis through the right radial artery. It is a coding project and a teaching demo. **It is
-not clinical training and not medical advice.** Its anatomy, physiology, device rules and scoring are
-simplified models with invented numbers, and it must not be used to make or inform any clinical
-decision. Keep the disclaimer on the start screen if you share or modify it.
+> **Educational demonstration only.** This is a coding project and a teaching demo. It is **not clinical training and
+> not medical advice**. Its anatomy, physiology, device rules and scoring are simplified models with invented numbers,
+> and it must not be used to make or inform any clinical decision. No real patient data is used or accepted. Keep this
+> disclaimer on the start screen if you share or modify it.
+
+A browser-based simulator of percutaneous coronary intervention (PCI): stenting a 90% mid-LAD stenosis through the
+right radial artery, in six scored steps, in 3D and on a simulated X-ray screen, with a narrated demo that plays the
+whole case. Strict TypeScript, Three.js, Vite and Vitest; every rule is a pure function with a unit test.
+
+| The demo playing the case | A balloon across the lesion |
+|---|---|
+| ![The autopilot demo, narrating, at the start of the case](docs/screenshots/demo-running.jpg) | ![A balloon inflated across the 90% lesion, with the pressure panel](docs/screenshots/balloon-inflated-3d.jpg) |
+| **The X-ray view: the held angiogram** | **The scored debrief** |
+| ![A held angiogram on the simulated fluoroscopy screen](docs/screenshots/xray-angiogram-held.jpg) | ![The debrief: Excellent, 100 out of 100](docs/screenshots/debrief-excellent.jpg) |
+
+There is no public live link: it has not been deployed (see [Deploying](#deploying)). To run it:
+
+```bash
+cd simulator && npm install && npm run dev      # then open http://localhost:5173/cathlab/
+```
+
+Needs Node 20 or newer. Press **Enter the cath lab** to play, or **Watch a demo first** to see it done.
+
+## Where it lives
 
 It is part of the Glassbox MD app: the app serves the built simulator at `/cathlab/` on its own server
 (`src/glassbox_md/cathlab.py`), behind the same login when login is configured, and offers it from the start
@@ -12,8 +31,8 @@ menu. It is **not connected to the diagnostic pipeline**: the pipeline reasons a
 this simulates a procedure with made-up physiology, so it reads no case and no patient report links to it;
 mixing the two would blur what each one claims.
 
-The design follows a public specification-style prompt (Vite + strict TypeScript + Three.js + Vitest,
-simulation logic in pure functions, every constant in one config file, 1 scene unit = 1 mm).
+The design follows a public specification-style prompt (Vite + strict TypeScript + Three.js + Vitest, simulation
+logic in pure functions, every constant in one config file, 1 scene unit = 1 mm) and was built with Claude Code.
 
 ## Run it
 
@@ -33,22 +52,40 @@ While working on the simulator itself:
 cd simulator
 npm run dev        # hot reload at http://localhost:5173/cathlab/
 npm test           # unit tests
+npm run typecheck  # strict TypeScript, no emit
 ```
 
 The build is for the path `/cathlab/` (`base` in `vite.config.ts`); a Python test checks it matches the
-server. Needs Node 20 or newer.
+server, and another serves the real build and loads every file it references.
+
+## Tests
+
+- **523 unit tests in 24 files** (`npm test`, count at the time of writing), all passing: the lesion and lumen, flow and TIMI, devices, physiology
+  and ECG, the guide and the wire, the stages and tool unlocks, the scored debrief, the 3D geometry and scene, the
+  X-ray projection and image content, the HUD model and input mapping, and the demo autopilot.
+- **End to end at the logic level:** a scripted learner (`tests/helpers/player.ts`) plays the whole case through the
+  real engine and must score Excellent; the demo autopilot must do the same at three different frame lengths; the
+  specification's deliberately bad case (an oversized stent at high pressure) must give a dissection, reduced flow and
+  a "Needs work" debrief.
+- **In Python** (`tests/test_cathlab.py`, `tests/test_cathlab_real_build.py`): the app mounts the simulator ahead of
+  Chainlit's catch-all, gates it behind the login, blocks path traversal, and serves the real build, including the
+  lab chunk that loads when someone enters.
+- **Not covered by tests:** what the 3D and X-ray views look like, and how they feel on a real GPU. Those were checked
+  by playing in a browser (see `DESIGN-NOTES.md` for exactly what was and was not).
+- CI (`.github/workflows/ci.yml`) typechecks, tests and builds on Node 20 and 22, and also builds the simulator inside
+  the Python test job; a weekly audit job checks the npm dependencies.
 
 ## Status
 
 | Phase | What | State |
 |---|---|---|
 | 0 | Scaffold, strict TypeScript, tests, disclaimer start screen | done |
-| 1 | Pure logic: flow and TIMI, devices, physiology, guide and wire, stages, debrief | done: 289 unit tests |
+| 1 | Pure logic: flow and TIMI, devices, physiology, guide and wire, stages, debrief | done |
 | 2 | Procedural heart and vessels, 3D view | done: beating heart, six coronaries at true lumen, aorta, wrist-to-root route, labels, orbit camera |
 | 3 | Devices and the six-stage procedure UI | done: playable end to end with a scored debrief (see below for what is simplified) |
 | 4 | X-ray view and C-arm | done: live fluoroscopy, last-image hold, contrast cine and a movable C-arm |
 | 5 | Demo autopilot and complications | done: narrated demo that ends on an Excellent debrief; tear staining on fluoro |
-| 6 | README polish, CI, deploy decision | not started |
+| 6 | README polish, CI, deploy decision | done: see Tests and Deploying |
 
 **What you can do today:** the whole case is playable in the browser. Press "Enter the cath lab" and work through
 the six steps: advance the guide from the wrist to the aortic root, seat it in the left main, take a diagnostic
@@ -103,3 +140,27 @@ and the help panel say so. Also not built from the spec's HUD list: the hover di
   frames and browser events. They are checked by playing in a browser, not by unit tests.
 - Each vessel's 3D path is cut or extended to exactly its configured length, so what the rules say (distance along
   a rail) and what is drawn cannot drift apart.
+
+## Deploying
+
+**The decision: it is not deployed, and the supported way to run it is inside the Glassbox app.** Putting it on a public
+URL publishes it to anyone, which is a choice for its owner to make, and the app already gives it one origin, the same
+login and the same disclaimers. If you do want a standalone link (the specification's stretch goal), the build is ready:
+
+```bash
+cd simulator
+npm run build:standalone     # same sources, base "/" instead of "/cathlab/", into simulator/dist-standalone
+```
+
+Point any static host at `simulator/dist-standalone` (for Vercel: root directory `simulator`, build command
+`npm run build:standalone`, output directory `dist-standalone`). Keep the start-screen disclaimer, and note that the
+standalone build is not behind the Glassbox login. CI builds it on every change so the script cannot rot.
+
+## What I would do differently
+
+The numbers are invented teaching choices, so I would have a clinician review and calibrate the flow, pressure, timing and
+scoring constants before calling it anything more than a demo. The 3D and X-ray views were verified by looking, which
+found real bugs (opaque arteries hiding the devices, the mouse wheel hijacking page scrolling) that no unit test could
+have; I would add screenshot-based regression tests with a real browser, and test the frame rate on a real GPU. The
+X-ray picture is a flat sketch of a stylised anatomy, so I would replace it with a proper projection of a volume model
+with a diverging beam, and add the sound and the hover diameter read-out that the specification lists.
