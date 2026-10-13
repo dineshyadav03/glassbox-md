@@ -123,6 +123,8 @@ export type Action =
   | { readonly type: 'select-carm'; readonly index: number }
   /** Nudge the C-arm by this many degrees (LAO positive, cranial positive). */
   | { readonly type: 'adjust-carm'; readonly laoDeg: number; readonly cranialDeg: number }
+  /** The demo autopilot says what it is doing; it appears in the mentor log and changes nothing else. */
+  | { readonly type: 'narrate'; readonly text: string }
   | { readonly type: 'end-case' };
 
 export type MessageLevel = 'info' | 'good' | 'warn' | 'bad';
@@ -673,6 +675,11 @@ export function act(sim: Simulation, action: Action): Simulation {
         laoDeg: clamp(sim.carmAngles.laoDeg + action.laoDeg, CARM.laoRangeDeg),
         cranialDeg: clamp(sim.carmAngles.cranialDeg + action.cranialDeg, CARM.cranialRangeDeg),
       };
+      return draft;
+    }
+
+    case 'narrate': {
+      say(draft, `Demo: ${action.text}`, 'info');
       return draft;
     }
 

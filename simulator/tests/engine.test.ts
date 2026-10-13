@@ -328,6 +328,43 @@ describe('mistakes show up in the debrief', () => {
   });
 });
 
+describe('the deliberately bad case (an oversized stent at high pressure)', () => {
+  const p = playGoodCase({ stent: { diameter: 4.0, length: 12, atm: 16 }, balloon: { diameter: 2.5, length: 15, atm: 10, holdS: 8 } });
+  // A 12 mm stent cannot cover the lesion, so the case stays open; end it to see the debrief the learner would get.
+  const ended = p.do({ type: 'end-case' }).sim;
+
+  it('tears the wall just beyond the stent, and the tear is not sealed', () => {
+    expect(ended.dissections).toHaveLength(1);
+    expect(ended.dissections[0]).toMatchObject({ vessel: 'LAD', cause: 'stent', sealed: false });
+  });
+
+  it('leaves the flow reduced rather than normal', () => {
+    expect(timiForVessel(flowSceneOf(ended), 'LAD')).toBeLessThan(3);
+  });
+
+  it('is graded Needs-work-or-worse, held down by the tear', () => {
+    expect(['Needs work', 'Incomplete']).toContain(ended.debrief!.grade);
+    expect(ended.debrief!.cappedBy).toContain('unsealed dissection');
+  });
+
+  it('with a long enough oversized stent the case finishes and is graded Needs work', () => {
+    const full = playGoodCase({ stent: { diameter: 4.0, length: 18, atm: 16 } });
+    expect(full.sim.ended).toBe(true);
+    expect(timiForVessel(flowSceneOf(full.sim), 'LAD')).toBeLessThan(3);
+    expect(full.sim.dissections.some((d) => !d.sealed)).toBe(true);
+    expect(full.sim.debrief!.grade).toBe('Needs work');
+  });
+});
+
+describe('the demo narration action', () => {
+  it('adds a Demo-prefixed mentor message and changes nothing else', () => {
+    const before = createSimulation();
+    const after = act(before, { type: 'narrate', text: 'Advancing the guide.' });
+    expect(after.messages[after.messages.length - 1]!.text).toBe('Demo: Advancing the guide.');
+    expect({ ...after, messages: before.messages }).toEqual(before);
+  });
+});
+
 describe('the patient and the balloon', () => {
   it('becomes ischaemic while an inflated balloon seals the LAD, and recovers after', () => {
     const p = playGoodCase({ stopAfterWire: true }).do({ type: 'select-tool', tool: 'balloon' });

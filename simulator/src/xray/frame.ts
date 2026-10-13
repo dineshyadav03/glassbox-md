@@ -334,6 +334,44 @@ export function dyeAlpha(sim: Simulation, id: VesselId, s: number): number {
   return Math.min(1, alpha);
 }
 
+/**
+ * Contrast staining: where a wall tear is not sealed, dye seeps out beside the lumen and, unlike the dye in the
+ * lumen, does not wash out with the run. Returns a short, dark smudge beside the vessel, or null before dye arrives.
+ */
+export function stainStrength(sim: Simulation, id: VesselId, s: number): number {
+  const run = sim.injection;
+  if (!run || !run.result) return 0;
+  // A duration of "forever" turns off the wash-out: only the arrival of the dye matters.
+  return dyeFill(run.result.arrival[id] ?? [], run.result.factor[id] ?? [], s, sim.time - run.start, 1e9);
+}
+
+function stainPrim(sim: Simulation, camera: Camera, id: VesselId, s: number, beat: number): Line | null {
+  const strength = stainStrength(sim, id, s);
+  if (strength < 0.05) return null;
+  const path = anatomyPaths().vessels[id];
+  const a = project(camera, scale(path.positionAt(Math.max(0, s - 1.5)), beat));
+  const b = project(camera, scale(path.positionAt(Math.min(path.length, s + 1.5)), beat));
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const norm = Math.hypot(dx, dy) || 1;
+  const px = camera.pxPerMm;
+  const lumen = lumenDiameterAt(id, s, treatmentsOf(sim)) / 2;
+  const offset = (lumen + 1.4) * px;
+  const cx = (a.x + b.x) / 2 - (dy / norm) * offset;
+  const cy = (a.y + b.y) / 2 + (dx / norm) * offset;
+  const half = 2.2 * px;
+  return {
+    kind: 'line',
+    shade: 'dye',
+    x1: cx - (dx / norm) * half,
+    y1: cy - (dy / norm) * half,
+    x2: cx + (dx / norm) * half,
+    y2: cy + (dy / norm) * half,
+    width: Math.max(2.5, 2.4 * px),
+    alpha: 0.6 * Math.min(1, strength),
+  };
+}
+
 // --- dye ------------------------------------------------------------------------------------------------------------------------
 
 function dye(sim: Simulation, camera: Camera, beat: number): { prims: Prim[]; amount: number } {
@@ -365,6 +403,14 @@ function dye(sim: Simulation, camera: Camera, beat: number): { prims: Prim[]; am
 
   for (const id of LEFT_SYSTEM) {
     const path = anatomyPaths().vessels[id];
+    for (const d of sim.dissections) {
+      if (d.vessel !== id || d.sealed) continue;
+      const stain = stainPrim(sim, camera, id, d.s, beat);
+      if (stain) {
+        prims.push(stain);
+        amount += stain.alpha * stain.width;
+      }
+    }
     let previous: ReturnType<typeof project> | null = null;
     for (let s = 0; s <= path.length + 1e-9; s += 1) {
       const here = Math.min(s, path.length);

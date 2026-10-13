@@ -7,6 +7,10 @@ import {
   dialView,
   gaugeView,
   monitorView,
+  stageList,
+  toastView,
+  TOAST_SECONDS,
+  usageReadout,
   positionReadout,
   pressureAdvice,
   qcaReadout,
@@ -191,5 +195,46 @@ describe('sizes', () => {
     expect(pressureAdvice(p.sim)).toMatch(/6 atm/);
     p.do({ type: 'select-tool', tool: 'wire' });
     expect(pressureAdvice(p.sim)).toBe('');
+  });
+});
+
+describe('stageList', () => {
+  it('lists all six steps with the current one marked and no times yet', () => {
+    const rows = stageList(createSimulation());
+    expect(rows).toHaveLength(6);
+    expect(rows.map((r) => r.number)).toEqual([1, 2, 3, 4, 5, 6]);
+    expect(rows.filter((r) => r.current).map((r) => r.number)).toEqual([1]);
+    expect(rows.every((r) => !r.done && r.time === '')).toBe(true);
+  });
+
+  it('records when each step was finished, in order, and none is current at the end', () => {
+    const rows = stageList(playGoodCase().sim);
+    expect(rows.every((r) => r.done && /^\d+:\d\d$/.test(r.time))).toBe(true);
+    expect(rows.some((r) => r.current)).toBe(false);
+    const seconds = rows.map((r) => Number(r.time.split(':')[0]) * 60 + Number(r.time.split(':')[1]));
+    for (let i = 1; i < seconds.length; i++) expect(seconds[i]!).toBeGreaterThanOrEqual(seconds[i - 1]!);
+  });
+});
+
+describe('toastView', () => {
+  it('shows the newest message while it is fresh and then lets it go', () => {
+    const fresh = createSimulation();
+    expect(toastView(fresh)?.text).toMatch(/Case start/);
+    const stale = new Player().wait(TOAST_SECONDS + 1);
+    expect(toastView(stale.sim)).toBeNull();
+  });
+
+  it('carries the message level', () => {
+    const p = new Player().do({ type: 'select-tool', tool: 'wire' });
+    expect(toastView(p.sim)?.level).toBe('warn');
+  });
+});
+
+describe('usageReadout', () => {
+  it('counts fluoroscopy time while the pedal is down and contrast as it is used', () => {
+    expect(usageReadout(createSimulation())).toEqual({ fluoro: '0:00', contrast: '0 ml' });
+    const p = playGoodCase({ stopAfterWire: true });
+    expect(usageReadout(p.sim).contrast).toBe('8 ml');
+    expect(usageReadout(p.sim).fluoro).toMatch(/^0:0\d$/);
   });
 });

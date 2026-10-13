@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { anatomyPaths } from '../src/anatomy/centrelines';
 import { LESION } from '../src/config/anatomy';
 import { createSimulation, type Simulation } from '../src/engine/simulation';
-import { buildXrayFrame, beatScale, convexHull, dyeAlpha, fieldOfViewMm, xrayCentre, xrayMode, type Line, type Prim } from '../src/xray/frame';
+import { buildXrayFrame, beatScale, convexHull, dyeAlpha, stainStrength, fieldOfViewMm, xrayCentre, xrayMode, type Line, type Prim } from '../src/xray/frame';
 import { makeCamera, project, type CArmAngles } from '../src/xray/projection';
 import { Player, playGoodCase } from './helpers/player';
 
@@ -220,6 +220,47 @@ describe('contrast', () => {
     // Away from the tear nothing changes.
     expect(dyeAlpha(p.sim, 'LAD', 62)).toBeCloseTo(dyeAlpha(intact, 'LAD', 62), 9);
     expect(dyeAlpha(p.sim, 'LCx', 30)).toBeCloseTo(dyeAlpha(intact, 'LCx', 30), 9);
+  });
+});
+
+describe('contrast staining from a tear', () => {
+  function tornCase(): Player {
+    const p = new Player(() => 0);
+    p.hold({ rotate: 1 }, 1).until({ advance: 1 }, (s) => s.guide.s >= 829.9);
+    p.until({ advance: 1, fine: true }, (s) => s.guide.engaged, 20).angiogram().do({ type: 'heparin' });
+    p.do({ type: 'select-tool', tool: 'wire' }).hold({ rotate: -1 }, 0.5);
+    p.until({ advance: 1, fine: true }, (s) => s.wire.vessel === 'LAD', 30).hold({ rotate: 1 }, 0.5);
+    p.until({ advance: 1 }, (s) => s.wire.s >= 78, 30);
+    return p;
+  }
+  const smudges = (sim: Simulation): Line[] =>
+    lines(frameOf(sim, sim.carmAngles, 80).dye, 'dye').filter((l) => l.width > 0 && l.alpha > 0 && l.alpha <= 0.6 + 1e-9 && Math.hypot(l.x2 - l.x1, l.y2 - l.y1) > 8 && Math.hypot(l.x2 - l.x1, l.y2 - l.y1) < 40);
+
+  it('has no staining before the dye arrives, a smudge beside the tear once it has, and none for an intact vessel', () => {
+    const p = tornCase();
+    expect(p.sim.dissections).toHaveLength(1);
+    expect(stainStrength(p.sim, 'LAD', LESION.centreS)).toBe(0);
+    p.hold({ fluoro: true }, 0.1).do({ type: 'inject' }).hold({ fluoro: true }, 4);
+    expect(stainStrength(p.sim, 'LAD', LESION.centreS)).toBeGreaterThan(0.3);
+    expect(stainStrength(p.sim, 'LAD', 10)).toBeGreaterThan(0.3); // dye has reached there too, but only the tear gets a smudge
+    const withTear = smudges(p.sim).length;
+    const without = smudges({ ...p.sim, dissections: [] }).length;
+    expect(withTear).toBeGreaterThan(without);
+  });
+
+  it('lingers while the dye in the lumen washes out', () => {
+    const p = tornCase();
+    p.hold({ fluoro: true }, 0.1).do({ type: 'inject' });
+    const duration = p.sim.injection!.duration;
+    p.until({ fluoro: true }, (s) => s.time - s.injection!.start > duration - 0.3, 30);
+    expect(dyeAlpha(p.sim, 'LAD', 62)).toBeLessThan(0.2);
+    expect(stainStrength(p.sim, 'LAD', LESION.centreS)).toBeGreaterThan(0.3);
+  });
+
+  it('is not drawn once a stent covers the tear', () => {
+    const p = tornCase();
+    expect(p.sim.dissections[0]!.sealed).toBe(false);
+    expect(frameOf({ ...p.sim, dissections: [{ ...p.sim.dissections[0]!, sealed: true }] }, p.sim.carmAngles, 80).dye).toEqual([]);
   });
 });
 

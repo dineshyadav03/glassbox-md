@@ -103,6 +103,43 @@ export function stageView(sim: Simulation): StageView {
   };
 }
 
+/** One row of the checklist of all six steps, with when each was finished. */
+export interface StageRow {
+  readonly number: number;
+  readonly title: string;
+  readonly done: boolean;
+  readonly current: boolean;
+  /** Case time it was completed at, like "1:42", or an empty string. */
+  readonly time: string;
+}
+
+export function stageList(sim: Simulation): StageRow[] {
+  const current = stageIndexOf(sim);
+  return STAGES.map((stage, i) => {
+    const at = sim.progress.completedAt[i] ?? null;
+    return { number: i + 1, title: stage.title, done: at !== null, current: i === current, time: at === null ? '' : timeString(at) };
+  });
+}
+
+/** The newest mentor message while it is fresh, for the strip above the toolbar. */
+export interface Toast {
+  readonly text: string;
+  readonly level: 'info' | 'good' | 'warn' | 'bad';
+}
+
+export const TOAST_SECONDS = 4;
+
+export function toastView(sim: Simulation): Toast | null {
+  const last = sim.messages[sim.messages.length - 1];
+  if (!last || sim.time - last.t > TOAST_SECONDS) return null;
+  return { text: last.text, level: last.level };
+}
+
+/** Fluoroscopy time and contrast used so far, for the top bar. */
+export function usageReadout(sim: Simulation): { readonly fluoro: string; readonly contrast: string } {
+  return { fluoro: timeString(sim.fluoroSeconds), contrast: `${Math.round(sim.contrastMl)} ml` };
+}
+
 // --- the monitor ----------------------------------------------------------------------------------------------
 
 export interface MonitorView {
