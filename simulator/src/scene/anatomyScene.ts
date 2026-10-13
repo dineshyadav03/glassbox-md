@@ -22,6 +22,11 @@ const PLAQUE: Colour = [0.96, 0.86, 0.5];
 
 const mix = (a: Colour, b: Colour, t: number): Colour => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
 
+/** A coronary vessel's colour along its length before any overlay: arterial red, pale where the plaque is. */
+function baseColour(id: VesselId): (s: number) => Colour {
+  return (s) => (id === LESION.vessel ? mix(ARTERY, PLAQUE, 0.9 * lesionWeight(s)) : ARTERY);
+}
+
 export interface AnatomyScene {
   readonly root: THREE.Group;
   /** The heart and the coronary arteries; scaled together by the beat. */
@@ -36,6 +41,10 @@ export interface AnatomyScene {
   setBeatPhase(phase: number): void;
   /** Redraw the coronary arteries for the given treatments (stents and balloons change the lumen). */
   setTreatments(treatments: readonly Treatment[]): void;
+  /** Tint the coronary walls (dissection flaps, dye) over their base colour; null clears it. */
+  setOverlay(overlay: ((id: VesselId, s: number, base: Colour) => Colour) | null): void;
+  /** Fill the aorta with dye, 0 (none) to 1 (full). */
+  setAortaDye(amount: number): void;
   dispose(): void;
 }
 
@@ -82,6 +91,7 @@ class TubeMesh {
   private readonly template: TubeTemplate;
   private readonly positions: Float32Array;
   private readonly normals: Float32Array;
+  private readonly colours: Float32Array;
 
   constructor(
     path: Path,
@@ -95,16 +105,21 @@ class TubeMesh {
     this.template = new TubeTemplate(path, { step, radialSegments });
     this.positions = new Float32Array(this.template.vertexCount * 3);
     this.normals = new Float32Array(this.template.vertexCount * 3);
-    const colours = new Float32Array(this.template.vertexCount * 3);
+    this.colours = new Float32Array(this.template.vertexCount * 3);
     this.template.fill(radiusAt, this.positions, this.normals);
-    this.template.fillColours(colourAt, colours);
+    this.template.fillColours(colourAt, this.colours);
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute('position', new THREE.BufferAttribute(this.positions, 3));
     geometry.setAttribute('normal', new THREE.BufferAttribute(this.normals, 3));
-    geometry.setAttribute('color', new THREE.BufferAttribute(colours, 3));
+    geometry.setAttribute('color', new THREE.BufferAttribute(this.colours, 3));
     geometry.setIndex(new THREE.BufferAttribute(this.template.indices(), 1));
     this.mesh = new THREE.Mesh(geometry, material);
     this.mesh.name = name;
+  }
+
+  setColours(colourAt: (s: number) => Colour): void {
+    this.template.fillColours(colourAt, this.colours);
+    this.mesh.geometry.attributes.color!.needsUpdate = true;
   }
 
   setRadius(radiusAt: (s: number) => number): void {
@@ -145,7 +160,7 @@ export function buildAnatomyScene(): AnatomyScene {
   const coronaryTubes = {} as Record<VesselId, TubeMesh>;
   const coronaries = {} as Record<VesselId, THREE.Mesh>;
   for (const id of VESSEL_ORDER) {
-    const colourAt = (s: number): Colour => (id === LESION.vessel ? mix(ARTERY, PLAQUE, 0.9 * lesionWeight(s)) : ARTERY);
+    const colourAt = baseColour(id);
     const tube = new TubeMesh(vessels[id], (s) => lumenDiameterAt(id, s) / 2, colourAt, arteryMaterial, 0.75, 14, `coronary-${id}`);
     coronaryTubes[id] = tube;
     coronaries[id] = tube.mesh;
@@ -174,6 +189,13 @@ export function buildAnatomyScene(): AnatomyScene {
   const heartBounds = new THREE.Box3().setFromObject(beating);
   const routeBounds = new THREE.Box3().setFromObject(root);
 
+  const applyOverlay = (overlay: ((id: VesselId, s: number, base: Colour) => Colour) | null): void => {
+    for (const id of VESSEL_ORDER) {
+      const base = baseColour(id);
+      coronaryTubes[id].setColours(overlay ? (s) => overlay(id, s, base(s)) : base);
+    }
+  };
+
   const applyTreatments = (treatments: readonly Treatment[]): void => {
     for (const id of VESSEL_ORDER) coronaryTubes[id].setRadius((s) => lumenDiameterAt(id, s, treatments) / 2);
   };
@@ -190,6 +212,11 @@ export function buildAnatomyScene(): AnatomyScene {
       beating.scale.setScalar(beatFactor(phase));
     },
     setTreatments: applyTreatments,
+    setOverlay: applyOverlay,
+    setAortaDye(amount: number): void {
+      aortaMaterial.color.setHex(0xd9676a).lerp(new THREE.Color(0x8fd8ff), Math.min(1, Math.max(0, amount)));
+      aortaMaterial.opacity = 0.38 + 0.3 * Math.min(1, Math.max(0, amount));
+    },
     dispose(): void {
       root.traverse((object) => {
         if (object instanceof THREE.Mesh) {
