@@ -5,6 +5,14 @@ leaves some numbers and rules open. These are the choices made in Phase 1, so th
 All of them are teaching approximations, not clinical values, and each lives in
 `src/config/anatomy.ts` unless noted.
 
+## Where it lives
+
+Inside the Glassbox MD app, not beside it: `src/glassbox_md/cathlab.py` mounts `simulator/dist` at
+`/cathlab/` on the app's own server, ahead of Chainlit's catch-all route (which would otherwise answer every
+path with the chat page). A bare `/cathlab` gets its own redirect for the same reason. With login configured,
+the mount sits behind Chainlit's own session cookie, checked with Chainlit's own helpers. It is not wired to the
+pipeline: no case data goes in, nothing comes out, and no report links to it.
+
 ## Invented numbers (not in the specification)
 
 - **Vessel lengths and diameters.** LM 12 mm; LAD 110 mm tapering 3.8 to 1.9 mm; LCx 75 mm; D1 leaves

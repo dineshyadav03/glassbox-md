@@ -22,6 +22,12 @@ confirming calls `case_store.confirm_case`, which records a real
 timestamp in `data/cases/cases.db` and is what a reopened past case's
 `clinician_confirmed` flag actually reflects.
 
+Cath-lab simulator: the educational PCI simulator (`simulator/`, built to
+`simulator/dist`) is served by this same app at `/cathlab/` (see `cathlab.py`),
+behind the same login, and offered as a third choice in `on_chat_start`. It is
+a side trip: it is not connected to the pipeline, reads no case, and no report
+links to it. If it has not been built, the menu says how instead of 404ing.
+
 Case persistence + browse: every completed case is saved via
 `case_store.save_case` right where its report is first shown (only the
 already-redacted report/prediction/audit-log, never raw or
@@ -64,7 +70,7 @@ from dotenv import load_dotenv
 from chainlit.config import config as chainlit_config
 from chainlit.server import app as chainlit_server_app
 
-from glassbox_md import auth, case_store, decision_layer
+from glassbox_md import auth, case_store, cathlab, decision_layer
 from glassbox_md.agents.diagnostic_prediction import backend_description
 from glassbox_md.case_store import CaseRecord
 from glassbox_md.origin_guard import OriginGuard
@@ -84,6 +90,33 @@ _auth_settings = auth.enforce_deployment_safety()
 # instance. This closes that for both, using the same allow-list. Login is
 # still the actual access control (see origin_guard.py).
 chainlit_server_app.add_middleware(OriginGuard, allowed_origins=chainlit_config.project.allow_origins)
+
+def _login_token_is_valid(token: str) -> bool:
+    """The same check Chainlit applies to its own session cookie."""
+    from chainlit.auth import decode_jwt
+
+    try:
+        decode_jwt(token)
+    except Exception:  # noqa: BLE001 -- expired, forged or malformed all mean "not logged in"
+        return False
+    return True
+
+
+# The cath-lab simulator (simulator/, built to simulator/dist) is served by this same app at
+# /cathlab/, behind the same login when login is configured. It is not connected to the diagnostic
+# pipeline. Nothing is mounted if it has not been built; the start menu then says how to build it.
+def _mount_cathlab() -> bool:
+    if _auth_settings.enabled:
+        from chainlit.auth import get_token_from_cookies
+
+        return cathlab.mount_cathlab(
+            chainlit_server_app, token_from_cookies=get_token_from_cookies, is_valid=_login_token_is_valid
+        )
+    return cathlab.mount_cathlab(chainlit_server_app)
+
+
+_cathlab_mounted = _mount_cathlab()
+
 
 if _auth_settings.enabled:
 
@@ -135,14 +168,11 @@ def _new_state(paths: list[str]) -> dict[str, Any]:
 async def start() -> None:
     await cl.Message(content=INTENDED_USE_DISCLAIMER, author="System").send()
 
-    choice = await cl.AskActionMessage(
-        content="Start a new case, or look at a past one?",
-        actions=[
-            cl.Action(name="upload_new", payload={}, label="📤 Upload a new case"),
-            cl.Action(name="view_past", payload={}, label="📋 Browse past cases"),
-        ],
-        timeout=90,
-    ).send()
+    choice = await _ask_start_choice()
+    # The simulator is a side trip, not a case: show where it is, then offer the same choices again.
+    while choice and choice["name"] == "open_cathlab":
+        await cl.Message(content=cathlab.menu_message(_cathlab_mounted)).send()
+        choice = await _ask_start_choice()
 
     # None on timeout (raise_on_timeout defaults to False) -- treated the
     # same as explicitly choosing to upload, not as an error.
@@ -152,6 +182,18 @@ async def start() -> None:
             return
 
     await _start_new_case_upload()
+
+
+async def _ask_start_choice() -> dict[str, Any] | None:
+    return await cl.AskActionMessage(
+        content="Start a new case, look at a past one, or open the educational cath-lab simulator?",
+        actions=[
+            cl.Action(name="upload_new", payload={}, label="📤 Upload a new case"),
+            cl.Action(name="view_past", payload={}, label="📋 Browse past cases"),
+            cl.Action(name="open_cathlab", payload={}, label="🫀 Cath lab simulator (educational)"),
+        ],
+        timeout=90,
+    ).send()
 
 
 async def _browse_past_cases() -> bool:

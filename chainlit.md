@@ -24,4 +24,8 @@ each stage did:
 5. **Diagnostic Prediction** -- produces a ranked differential, never a single verdict
 6. **Report Assembly** -- combines the model's self-reported reasoning with retrieved citations. It also runs a SHAP demo on a public dataset; that demo is *not* about the current case
 
+There is also an **educational cath-lab simulator** (start menu, or `/cathlab/`): a simplified teaching
+simulation of stenting a blocked artery, with invented numbers. It is not clinical training or medical
+advice, and it is not connected to the pipeline above or to any case.
+
 **Use synthetic or de-identified test data only.** See `data/README.md` in the repo for how test documents are generated.

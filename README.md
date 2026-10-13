@@ -422,6 +422,7 @@ healthcare/
 │   ├── audit.py                shared helper for building audit log entries
 │   ├── disclaimer.py          the intended-use disclaimer, defined once
 │   ├── case_store.py          local SQLite persistence for completed cases (done)
+│   ├── cathlab.py             serves the built simulator at /cathlab/ inside this app, behind the same login
 │   ├── report_format.py       the report's Markdown, with the honesty labels (self-reported, not calibrated, ...)
 │   ├── auth.py                opt-in login (salted PBKDF2) + refuse-to-serve-unprotected startup gate
 │   ├── origin_guard.py        ASGI middleware: rejects cross-origin HTTP and websocket requests
@@ -440,6 +441,7 @@ healthcare/
 │       ├── controlled_vocabulary.py canonical term -> real MeSH Descriptor UI map (done)
 │       ├── diagnostic_prediction.py Structured differential via OpenRouter (done)
 │       └── explainability.py       Report assembly: model's self-reported reasoning + retrieved citations; separate SHAP demo (done)
+├── simulator/                  the cath-lab PCI simulator (Vite + TypeScript), served by this app at /cathlab/
 ├── scripts/
 │   ├── build_literature_index.py  offline: fetch PubMed, build the RAG index
 │   ├── eval_imaging.py            slow, networked: run + report the real-image evaluation
@@ -566,6 +568,25 @@ Upload a lab-report/history PDF and/or imaging -- a DICOM file or a PNG/JPG
 image -- to run it through the pipeline; each agent renders as its own step as
 it completes. The upload prompt says where the case will be analysed (this
 machine, or OpenRouter) and that text printed on an image is not removed.
+
+**The cath-lab simulator is part of this app.** An educational browser simulator of
+stenting a 90% LAD blockage lives in `simulator/` and is served by the same server at
+`http://localhost:8000/cathlab/`, from the start menu ("Cath lab simulator"). It is
+built once, and needs Node 20 or newer:
+
+```bash
+cd simulator
+npm install
+npm run build
+```
+
+then restart the app. Without that build the menu entry says how to build it instead of
+leading to a dead link. It is **not connected to the diagnostic pipeline**: it reads no
+case and writes nothing, and no patient report links to it, because it simulates a
+procedure with invented physiology and a link from a report could read as a recommendation.
+It sits behind the same login when login is configured, and contains no patient data. See
+[`simulator/README.md`](simulator/README.md) for its status (the rules and scoring are
+built and tested; the 3D lab is in progress).
 
 ## Deployment checklist
 
