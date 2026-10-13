@@ -36,6 +36,7 @@ describe('keyPress', () => {
     expect(keyPress('f', false)).toEqual({ kind: 'ui', command: 'toggle-follow' });
     expect(keyPress('h', false)).toEqual({ kind: 'ui', command: 'toggle-help' });
     expect(keyPress('m', false)).toEqual({ kind: 'ui', command: 'toggle-mentor' });
+    expect(keyPress('n', false)).toEqual({ kind: 'ui', command: 'toggle-sound' });
     expect(keyPress('Escape', false)).toEqual({ kind: 'ui', command: 'pause' });
   });
 

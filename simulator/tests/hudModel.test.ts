@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { createSimulation } from '../src/engine/simulation';
+import { cursorFor, cursorSvg } from '../src/ui/cursors';
 import {
   canChooseSize,
   carmReadout,
   coverageReadout,
   dialView,
+  TOOL_RULES,
   gaugeView,
   monitorView,
   stageList,
@@ -236,5 +238,31 @@ describe('usageReadout', () => {
     const p = playGoodCase({ stopAfterWire: true });
     expect(usageReadout(p.sim).contrast).toBe('8 ml');
     expect(usageReadout(p.sim).fluoro).toMatch(/^0:0\d$/);
+  });
+});
+
+describe('tool tooltips and cursors', () => {
+  it('gives every tool a rule of at least a sentence, shown as its tooltip when it is available', () => {
+    for (const b of toolButtons(createSimulation())) {
+      expect(b.rule).toBe(TOOL_RULES[b.id]);
+      expect(b.rule.length).toBeGreaterThan(40);
+      expect(b.rule.endsWith('.')).toBe(true);
+    }
+  });
+
+  it('has a distinct, valid cursor for each of the seven tools, with a fallback', () => {
+    const seen = new Set<string>();
+    for (const id of ['guide', 'wire', 'balloon', 'stent', 'contrast', 'fluoro', 'measure'] as const) {
+      const svg = cursorSvg(id);
+      expect(svg.startsWith('<svg xmlns="http://www.w3.org/2000/svg"')).toBe(true);
+      expect(svg.endsWith('</svg>')).toBe(true);
+      expect(svg.length).toBeGreaterThan(150);
+      const css = cursorFor(id);
+      expect(css).toMatch(/^url\("data:image\/svg\+xml,%3Csvg/);
+      expect(css.endsWith('") 12 12, pointer')).toBe(true);
+      expect(css).not.toContain('<'); // encoded, so it is safe inside a style value
+      seen.add(css);
+    }
+    expect(seen.size).toBe(7);
   });
 });

@@ -60,9 +60,10 @@ server, and another serves the real build and loads every file it references.
 
 ## Tests
 
-- **523 unit tests in 24 files** (`npm test`, count at the time of writing), all passing: the lesion and lumen, flow and TIMI, devices, physiology
+- **552 unit tests in 26 files** (`npm test`, count at the time of writing), all passing: the lesion and lumen, flow and TIMI, devices, physiology
   and ECG, the guide and the wire, the stages and tool unlocks, the scored debrief, the 3D geometry and scene, the
-  X-ray projection and image content, the HUD model and input mapping, and the demo autopilot.
+  X-ray projection and image content, the HUD model and input mapping, hover measurement, the sound cues (with a fake
+  audio context), and the demo autopilot.
 - **End to end at the logic level:** a scripted learner (`tests/helpers/player.ts`) plays the whole case through the
   real engine and must score Excellent; the demo autopilot must do the same at three different frame lengths; the
   specification's deliberately bad case (an oversized stent at high pressure) must give a dissection, reduced flow and
@@ -119,8 +120,20 @@ staining beside the lumen that lingers while the dye washes out; it slows flow u
 4 atm past its rated pressure bursts and may tear the wall. A long inflation makes the patient ischaemic and then
 unstable. An oversized stent at high pressure gives a dissection, reduced flow and a "Needs work" debrief.
 
-**What is not built:** sound. Contrast also still shows on the vessels in the 3D view, as a teaching aid. The start screen
-and the help panel say so. Also not built from the spec's HUD list: the hover diameter read-out in 3D while measuring.
+**Measuring** (`7`): takes the QCA reading (reference diameter, minimum lumen diameter, lesion length, % stenosis) from the
+angiogram, and switches on a hover read-out in the 3D view: point at an artery and it names the vessel, how far along it
+you are, the lumen there against the healthy width, and the % stenosis, including through the pinch of the lesion. Measuring
+again after a balloon or stent reads the result. Press `7` again to switch the hover off.
+
+**Sound** (`N`, off until you press it): a monitor beep at the patient's heart rate whose pitch falls as oxygen saturation
+falls, a repeating alarm while the patient is unstable, a chime when a step is completed, and short tones for good,
+warning and danger messages (a refused action, a tear, a rupture). It is synthesised in the browser, so there are no audio
+files.
+
+Each tool has its own cursor and a tooltip with its rule (or, when it is locked, why).
+
+**Everything in the specification is now built.** What remains are simplifications, which the start screen and help panel
+state: the X-ray picture is a flat sketch of a stylised anatomy, and contrast also shows on the 3D vessels as a teaching aid.
 
 ## How the 3D part is organised
 
@@ -133,6 +146,8 @@ and the help panel say so. Also not built from the spec's HUD list: the hover di
 - `src/scene/devices.ts` draws the devices, dissection flaps and contrast from a `Simulation`; headless-safe.
 - `src/ui/hudModel.ts` computes everything each panel shows (tested); `hud.ts`, `gauges.ts`, `monitor.ts` and
   `debriefScreen.ts` only place it in the DOM; `input.ts` maps keys, on-screen holds and the wheel to controls.
+- `src/audio/` is the sound: `cues.ts` decides when (pure, tested) and `sound.ts` synthesises the tones through an audio
+  context that tests replace with a fake. `src/scene/measure.ts` turns a point on an artery into a diameter read-out.
 - `src/demo/autopilot.ts` is the demo: a pure state machine whose `advanceDemo` is used by both the screen and the tests.
 - `src/xray/` is the X-ray view: `projection.ts` (C-arm geometry), `frame.ts` (what the image contains, as shapes; tested)
   and `display.ts` (the canvas: noise, collimator, last-image hold, angiogram capture).
@@ -163,4 +178,4 @@ scoring constants before calling it anything more than a demo. The 3D and X-ray 
 found real bugs (opaque arteries hiding the devices, the mouse wheel hijacking page scrolling) that no unit test could
 have; I would add screenshot-based regression tests with a real browser, and test the frame rate on a real GPU. The
 X-ray picture is a flat sketch of a stylised anatomy, so I would replace it with a proper projection of a volume model
-with a diverging beam, and add the sound and the hover diameter read-out that the specification lists.
+with a diverging beam, and give the sound a listening test with real people, which I could not do.

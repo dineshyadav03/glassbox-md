@@ -155,8 +155,26 @@ pipeline: no case data goes in, nothing comes out, and no report links to it.
   case button, the six steps with completion times (the newest flashes), a toast strip for the latest message, and "Keep
   exploring / New case" on the debrief. Still missing: the hover diameter read-out in 3D while measuring.
 
+## Hover measurement and sound
+
+- **The hover picks the nearest point on a vessel's centreline within 14 pixels, not the vessel's surface.** A raycast against
+  the mesh never landed on the lesion: the 90% pinch is 0.3 mm wide, a pixel or two on screen, so the most interesting spot
+  was the hardest to point at. A point behind the heart is skipped, as the labels are.
+- **MLD is measured on the artery as it is now**, over the lesion's length, so measuring again after a balloon or stent shows
+  the result. The first reading is the one the step needs; later ones only inform. Pressing `7` after the first reading toggles
+  the hover read-out.
+- **Sound is off until `N`**, partly because browsers will not start audio without a key press or click, partly because
+  unexpected noise is a poor default in a teaching tool. The monitor beep follows the patient's heart rate in real time, not
+  demo speed, so at 4x it does not become a rattle; message tones come from the case's own messages.
+- **Warnings do not pile up:** a repeated warning or danger tone inside 0.8 s is dropped. The monitor beep and alarm are never dropped.
+- **A bug the live check found:** the first version compared the case before and after each frame's step, so a message caused by
+  a key press (which lands between frames) never made a tone. The driver now compares with the case as it was at the last frame.
+- **Not verified:** how it sounds. The tests check which tones are scheduled, at what pitch and when, against a fake audio
+  context, and the live lab was checked the same way (a recording stand-in for the browser's audio). Nobody has listened to
+  it, so volume, pitch and the alarm's tone are unjudged.
+
 ## Not done yet
 
-Sound, and the hover diameter read-out in 3D while measuring. The specification's "demo ends with an Excellent debrief" is therefore only
+Nothing from the specification. Listening tests for the sound, and the simplifications listed above, remain. The specification's "demo ends with an Excellent debrief" is therefore only
 tested at the logic level (`tests/scenario.test.ts`), by chaining the real modules for a good case and for the
 bad case.

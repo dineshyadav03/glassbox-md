@@ -7,6 +7,8 @@ import { buildAnatomyScene } from '../scene/anatomyScene';
 import { focusPoint, suggestedDistance } from '../scene/deviceMath';
 import { createDeviceView } from '../scene/devices';
 import { createViewer } from '../scene/viewer';
+import { SoundDriver } from '../audio/cues';
+import { SoundEngine, browserAudioContext } from '../audio/sound';
 import { measureAtPoint, measurementLines } from '../scene/measure';
 import { createXrayDisplay } from '../xray/display';
 import { advanceDemo, createPilot, type PilotState } from '../demo/autopilot';
@@ -34,7 +36,11 @@ export interface LabOptions {
 export function renderLabScreen(root: HTMLElement, onBack: () => void, options: LabOptions = {}): void {
   let sim: Simulation = createSimulation();
   let pilot: PilotState | null = options.demo ? createPilot() : null;
+  const sound = new SoundEngine(browserAudioContext);
+  const soundDriver = new SoundDriver();
+  let lastHeard: Simulation = sim;
   let flags: HudFlags = {
+    sound: false,
     measure: false,
     demo: { on: pilot !== null, speed: 1 },
     view: '3d',
@@ -58,6 +64,7 @@ export function renderLabScreen(root: HTMLElement, onBack: () => void, options: 
     window.removeEventListener('keyup', onKeyUp);
     window.removeEventListener('blur', onBlur);
     for (const type of ['keydown', 'pointerdown', 'wheel']) window.removeEventListener(type, interrupt, true);
+    sound.dispose();
     viewer?.dispose();
     devices.dispose();
     xray.dispose();
@@ -124,6 +131,11 @@ export function renderLabScreen(root: HTMLElement, onBack: () => void, options: 
         updatePicking();
         break;
       }
+      case 'toggle-sound':
+        // Switching sound on is done in response to this key press or click, which lets the browser start audio.
+        sound.setEnabled(!sound.enabled);
+        flags = { ...flags, sound: sound.enabled };
+        break;
       case 'toggle-help':
         flags = { ...flags, help: !flags.help };
         break;
@@ -205,6 +217,11 @@ export function renderLabScreen(root: HTMLElement, onBack: () => void, options: 
   const viewer = createViewer(hud.stage, anatomy, {
     onFrame: (dt) => {
       step(dt);
+      // Sound follows the case: beeps and the alarm at the patient's own pace (real time, not demo speed), and a
+      // tone for each new message that matters. It compares with the case as it was at the last frame, because a key
+      // press changes the case between frames. Nothing is decided while it is off, so it never queues up.
+      if (sound.enabled && !flags.paused) sound.playAll(soundDriver.update(lastHeard, sim, dt));
+      lastHeard = sim;
       devices.update(sim);
       xray.update(sim, performance.now(), monitorView(sim).heartRate, flags.view === 'xray');
       hud.update(sim, flags, dt);

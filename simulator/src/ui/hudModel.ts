@@ -13,6 +13,8 @@ import { inflatedDiameter, isInflated, lesionCoverage, type Catheter, type Cathe
 // --- tool bar ------------------------------------------------------------------------------------------
 
 export interface ToolButton {
+  /** The rule of this tool in a sentence, for its tooltip. */
+  readonly rule: string;
   readonly id: ToolId;
   readonly key: string;
   readonly label: string;
@@ -43,11 +45,23 @@ const TOOL_KIND: Readonly<Record<ToolId, ToolButton['kind']>> = {
   measure: 'action',
 };
 
+/** What each tool does and its main rule, shown on hover. */
+export const TOOL_RULES: Readonly<Record<ToolId, string>> = {
+  guide: '6F guide catheter. W/S advance, A/D turn the tip toward the left cusp, and push gently at the root to seat it. It cannot move while the wire is out.',
+  wire: '0.014 inch wire. A/D turn the tip to pick the branch at each fork; cross the lesion slowly (spinning it lets you go a little faster) or it buckles and can tear the wall.',
+  balloon: 'Balloon catheter over the wire. Choose its size while it is in the guide; it cannot move while inflated, and above its rated pressure it can burst.',
+  stent: 'Stent on a balloon. Size it to the measured vessel, cover the whole lesion, and deploy from 6 atm; it stays in the artery when the catheter is withdrawn.',
+  contrast: 'Inject contrast (C). Hold the fluoro pedal as well, or nothing is recorded; a seated guide gives a selective injection of the left coronary tree.',
+  fluoro: 'Fluoroscopy pedal (hold Space). Catheters and the wire show only while the beam is on, and radiation time counts in the debrief.',
+  measure: 'Measure the vessel on the angiogram (QCA); press again to toggle hovering an artery in 3D for its diameter.',
+};
+
 export function toolButtons(sim: Simulation): ToolButton[] {
   return TOOL_ORDER.map((id, index) => {
     const a = availability(sim, id);
     return {
       id,
+      rule: TOOL_RULES[id],
       key: String(index + 1),
       label: TOOL_LABEL[id],
       kind: TOOL_KIND[id],

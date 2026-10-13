@@ -586,8 +586,8 @@ case and writes nothing, and no patient report links to it, because it simulates
 procedure with invented physiology and a link from a report could read as a recommendation.
 It sits behind the same login when login is configured, and contains no patient data. See
 [`simulator/README.md`](simulator/README.md) for its status (the rules, scoring, 3D anatomy, the
-six-step procedure with a scored debrief, and an X-ray view with a movable C-arm, and a narrated demo are built and
-tested; sound is not).
+six-step procedure with a scored debrief, and an X-ray view with a movable C-arm, a narrated demo, hover measurement and optional sound
+are built and tested).
 
 ## Deployment checklist
 

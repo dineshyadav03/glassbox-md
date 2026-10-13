@@ -7,7 +7,7 @@ import { CARM } from '../config/anatomy';
 import type { Action, Controls } from '../engine/simulation';
 
 /** Things the interface itself does (not the simulation). */
-export type UiCommand = 'toggle-labels' | 'toggle-follow' | 'toggle-help' | 'toggle-mentor' | 'toggle-view' | 'pause';
+export type UiCommand = 'toggle-labels' | 'toggle-follow' | 'toggle-help' | 'toggle-mentor' | 'toggle-view' | 'toggle-sound' | 'pause';
 
 export type KeyResult = { readonly kind: 'action'; readonly action: Action } | { readonly kind: 'ui'; readonly command: UiCommand };
 
@@ -56,6 +56,8 @@ export function keyPress(key: string, shift: boolean): KeyResult | null {
       return { kind: 'ui', command: 'toggle-help' };
     case 'm':
       return { kind: 'ui', command: 'toggle-mentor' };
+    case 'n':
+      return { kind: 'ui', command: 'toggle-sound' };
     case 'escape':
       return { kind: 'ui', command: 'pause' };
     default:

@@ -7,7 +7,7 @@ export const LAB_DISCLAIMER =
 
 /** What is and is not here yet, shown in the help panel so the screen never overclaims. */
 export const LAB_LIMITS =
-  'Not built yet: sound. The X-ray picture is a simplified teaching image (flat shadows of a ' +
+  'Simplifications to keep in mind: the X-ray picture is a simplified teaching image (flat shadows of a ' +
   'stylised anatomy), and contrast also shows on the vessels in the 3D view as a teaching aid.';
 
 export const NO_WEBGL_MESSAGE =

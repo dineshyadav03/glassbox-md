@@ -26,7 +26,9 @@ describe('start screen content', () => {
     for (const key of ['1 to 7', 'W / S', 'A / D', 'E (hold)', 'Tab', 'Esc']) expect(keys).toContain(key);
   });
 
-  it('does not claim more is built than is', () => {
-    expect(BUILD_STATUS.toLowerCase()).toContain('not built yet');
+  it('describes what exists, including that sound is optional and that everything is simplified', () => {
+    expect(BUILD_STATUS).toMatch(/optional sound/);
+    expect(BUILD_STATUS.toLowerCase()).toContain('simplified');
+    expect(BUILD_STATUS.toLowerCase()).not.toContain('not built');
   });
 });

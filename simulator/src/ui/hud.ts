@@ -7,6 +7,7 @@ import { CARM, CARM_PRESETS } from '../config/anatomy';
 import { createSimulation, type Action, type Simulation } from '../engine/simulation';
 import { CONTROLS } from './startContent';
 import { el, setClass, setText } from './dom';
+import { cursorFor } from './cursors';
 import { createDial, createPressureGauge } from './gauges';
 import {
   canChooseSize,
@@ -47,6 +48,8 @@ export interface HudHandlers {
 }
 
 export interface HudFlags {
+  /** Sound is on. */
+  readonly sound: boolean;
   /** Measuring: hovering an artery in the 3D view reads out its diameter. */
   readonly measure: boolean;
   readonly demo: { readonly on: boolean; readonly speed: number };
@@ -142,13 +145,15 @@ export function createHud(handlers: HudHandlers): Hud {
   const frameRoute = button('Whole route');
   const labelsButton = button('Labels (L)');
   const followButton = button('Follow tip (F)');
+  const soundButton = button('Sound (N)');
+  soundButton.addEventListener('click', () => handlers.onUi('toggle-sound'));
   const viewButton = button('X-ray view (Tab)');
   viewButton.addEventListener('click', () => handlers.onUi('toggle-view'));
   frameHeart.addEventListener('click', handlers.onFrameHeart);
   frameRoute.addEventListener('click', handlers.onFrameRoute);
   labelsButton.addEventListener('click', () => handlers.onUi('toggle-labels'));
   followButton.addEventListener('click', () => handlers.onUi('toggle-follow'));
-  const viewTools = el('div', { className: 'view-tools' }, [viewButton, frameHeart, frameRoute, labelsButton, followButton]);
+  const viewTools = el('div', { className: 'view-tools' }, [viewButton, frameHeart, frameRoute, labelsButton, followButton, soundButton]);
 
   const toast = el('p', { className: 'toast hidden', attrs: { role: 'status' } });
 
@@ -157,6 +162,8 @@ export function createHud(handlers: HudHandlers): Hud {
   const toolBar = el('div', { className: 'tool-bar', attrs: { role: 'toolbar', 'aria-label': 'Tools' } });
   for (const t of toolButtons(createSimulation())) {
     const b = button(`${t.key} ${t.label}`, 'tool');
+    b.dataset.tool = t.id;
+    b.style.cursor = cursorFor(t.id);
     toolNodes.set(t.id, b);
     if (t.id === 'contrast') b.addEventListener('click', () => handlers.onAction({ type: 'inject' }));
     else if (t.id === 'measure') b.addEventListener('click', () => handlers.onAction({ type: 'measure' }));
@@ -361,7 +368,8 @@ export function createHud(handlers: HudHandlers): Hud {
         const active = t.active || (t.id === 'measure' && flags.measure);
         setClass(node, 'active', active);
         node.setAttribute('aria-pressed', String(active));
-        node.title = t.available ? '' : (t.reason ?? '');
+        // Available: the tool's rule. Locked: why, which is what the learner needs to know right now.
+        node.title = t.available ? t.rule : (t.reason ?? '');
       }
       setClass(heparinButton, 'done', sim.patient.heparinGiven);
 
@@ -431,6 +439,8 @@ export function createHud(handlers: HudHandlers): Hud {
       // Toggles and overlays.
       setClass(labelsButton, 'on', flags.labels);
       labelsButton.setAttribute('aria-pressed', String(flags.labels));
+      setClass(soundButton, 'on', flags.sound);
+      soundButton.setAttribute('aria-pressed', String(flags.sound));
       setClass(viewButton, 'on', flags.view === 'xray');
       viewButton.setAttribute('aria-pressed', String(flags.view === 'xray'));
       setClass(followButton, 'on', flags.follow);
