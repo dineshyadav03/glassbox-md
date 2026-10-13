@@ -22,6 +22,12 @@ export function chainTo(vessel: VesselId): VesselId[] {
   return chain;
 }
 
+/** The guide catheter's centreline: the whole access route, then a few mm into the left main (when seated). */
+export function buildGuidePath(): Path {
+  const { route } = anatomyPaths();
+  return new Path([...route.points, vesselPosition('LM', 0), vesselPosition('LM', 5)]);
+}
+
 /** The end vessels a wire can follow. The left main is drawn as part of the LAD route. */
 export const WIRE_ROUTES: readonly VesselId[] = ['LAD', 'LCx', 'D1', 'D2'];
 

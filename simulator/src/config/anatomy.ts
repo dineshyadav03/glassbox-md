@@ -260,6 +260,16 @@ export const CARM_PRESETS: readonly CArmPreset[] = [
   { id: 'AP', label: 'AP', laoDeg: 0, cranialDeg: 0 },
 ];
 
+/** C-arm limits and what counts as a different projection. */
+export const CARM = {
+  laoRangeDeg: 90,
+  cranialRangeDeg: 45,
+  fineStepDeg: 1,
+  coarseStepDeg: 5,
+  /** Two final angiograms count as different projections if their beams differ by at least this much. */
+  minSeparationDeg: 20,
+} as const;
+
 // --- debrief thresholds ------------------------------------------------------------------------
 
 export const DEBRIEF = {

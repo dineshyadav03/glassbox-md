@@ -8,6 +8,7 @@
  * Units: mm, atm, seconds, degrees.
  */
 import {
+  CARM,
   CARM_PRESETS,
   CATHETER,
   ELBOW_S,
@@ -55,6 +56,7 @@ import {
   type WireEvent,
   type WireState,
 } from '../physics/wire';
+import { carmLabel, viewSeparationDeg, type CArmAngles } from '../xray/projection';
 import { buildDebrief, type Debrief, type ProcedureSummary } from '../procedure/evaluation';
 import {
   STAGES,
@@ -118,6 +120,9 @@ export type Action =
   | { readonly type: 'measure' }
   | { readonly type: 'choose-size'; readonly kind: CatheterKind; readonly diameter: number; readonly length: number }
   | { readonly type: 'cycle-carm'; readonly direction: 1 | -1 }
+  | { readonly type: 'select-carm'; readonly index: number }
+  /** Nudge the C-arm by this many degrees (LAO positive, cranial positive). */
+  | { readonly type: 'adjust-carm'; readonly laoDeg: number; readonly cranialDeg: number }
   | { readonly type: 'end-case' };
 
 export type MessageLevel = 'info' | 'good' | 'warn' | 'bad';
@@ -174,10 +179,12 @@ export interface Simulation {
   readonly fluoroSeconds: number;
   readonly contrastMl: number;
   readonly injection: Injection | null;
-  /** Index into CARM_PRESETS. */
+  /** Index of the last preset chosen (the C-arm can then be nudged away from it). */
   readonly carm: number;
+  /** Where the C-arm is now. */
+  readonly carmAngles: CArmAngles;
   /** Distinct projections used for recorded selective injections after the stent. */
-  readonly finalProjections: readonly string[];
+  readonly finalProjections: readonly CArmAngles[];
   readonly qca: QcaReading | null;
   readonly balloonRuptures: number;
   readonly longestInflation: number;
@@ -219,6 +226,7 @@ export function createSimulation(): Simulation {
     contrastMl: 0,
     injection: null,
     carm: 0,
+    carmAngles: presetAngles(0),
     finalProjections: [],
     qca: null,
     balloonRuptures: 0,
@@ -250,9 +258,17 @@ function deployedStents(sim: Simulation): Treatment[] {
   return treatmentsOf(sim).filter((t) => t.kind === 'stent');
 }
 
-export function currentCArm(sim: Simulation) {
-  return CARM_PRESETS[sim.carm]!;
+function presetAngles(index: number): CArmAngles {
+  const preset = CARM_PRESETS[index]!;
+  return { laoDeg: preset.laoDeg, cranialDeg: preset.cranialDeg };
 }
+
+/** Where the C-arm is, with its readable name. */
+export function currentCArm(sim: Simulation): CArmAngles & { readonly label: string } {
+  return { ...sim.carmAngles, label: carmLabel(sim.carmAngles) };
+}
+
+const clamp = (value: number, limit: number): number => Math.max(-limit, Math.min(limit, value));
 
 export function factsOf(sim: Simulation): ProcedureFacts {
   const checkpoints = guideCheckpoints(sim.guide.s);
@@ -587,7 +603,7 @@ export function act(sim: Simulation, action: Action): Simulation {
         selective,
         recorded,
         result: flow,
-        projectionId: projection.id,
+        projectionId: projection.label,
       };
       if (!recorded) {
         say(draft, 'Contrast was injected without fluoroscopy, so nothing was recorded. Hold the pedal (Space) while you inject.', 'warn');
@@ -600,7 +616,9 @@ export function act(sim: Simulation, action: Action): Simulation {
       const timi = timiForVessel(flowSceneOf(sim), 'LAD');
       const afterStent = deployedStents(sim).length > 0;
       draft.latch = { ...sim.latch, diagnostic: true, angioAfterStent: sim.latch.angioAfterStent || afterStent };
-      if (afterStent && !sim.finalProjections.includes(projection.id)) draft.finalProjections = [...sim.finalProjections, projection.id];
+      if (afterStent && sim.finalProjections.every((seen) => viewSeparationDeg(seen, sim.carmAngles) >= CARM.minSeparationDeg)) {
+        draft.finalProjections = [...sim.finalProjections, sim.carmAngles];
+      }
       say(draft, `Angiogram in ${projection.label}: LAD flow is TIMI ${timi}.`, timi === 3 ? 'good' : 'warn');
       return draft;
     }
@@ -638,6 +656,23 @@ export function act(sim: Simulation, action: Action): Simulation {
     case 'cycle-carm': {
       const n = CARM_PRESETS.length;
       draft.carm = (((sim.carm + action.direction) % n) + n) % n;
+      draft.carmAngles = presetAngles(draft.carm);
+      return draft;
+    }
+
+    case 'select-carm': {
+      const n = CARM_PRESETS.length;
+      if (!Number.isInteger(action.index) || action.index < 0 || action.index >= n) return sim;
+      draft.carm = action.index;
+      draft.carmAngles = presetAngles(action.index);
+      return draft;
+    }
+
+    case 'adjust-carm': {
+      draft.carmAngles = {
+        laoDeg: clamp(sim.carmAngles.laoDeg + action.laoDeg, CARM.laoRangeDeg),
+        cranialDeg: clamp(sim.carmAngles.cranialDeg + action.cranialDeg, CARM.cranialRangeDeg),
+      };
       return draft;
     }
 

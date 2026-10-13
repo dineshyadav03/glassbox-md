@@ -381,6 +381,44 @@ describe('measuring and sizing', () => {
   });
 });
 
+describe('the C-arm angles', () => {
+  it('starts at the first preset, and a preset sets the angles', () => {
+    let sim = createSimulation();
+    expect(sim.carmAngles).toEqual({ laoDeg: -30, cranialDeg: 30 });
+    sim = act(sim, { type: 'select-carm', index: 2 });
+    expect(sim.carmAngles).toEqual({ laoDeg: 45, cranialDeg: 30 });
+    expect(sim.carm).toBe(2);
+    expect(act(sim, { type: 'select-carm', index: 99 })).toBe(sim);
+  });
+
+  it('can be nudged freely and stops at its limits', () => {
+    let sim = act(createSimulation(), { type: 'adjust-carm', laoDeg: 7, cranialDeg: -4 });
+    expect(sim.carmAngles).toEqual({ laoDeg: -23, cranialDeg: 26 });
+    sim = act(sim, { type: 'adjust-carm', laoDeg: 500, cranialDeg: 500 });
+    expect(sim.carmAngles).toEqual({ laoDeg: 90, cranialDeg: 45 });
+    sim = act(sim, { type: 'adjust-carm', laoDeg: -500, cranialDeg: -500 });
+    expect(sim.carmAngles).toEqual({ laoDeg: -90, cranialDeg: -45 });
+  });
+
+  it('cycling presets after a nudge goes to the next preset, not a mixture', () => {
+    const sim = act(act(createSimulation(), { type: 'adjust-carm', laoDeg: 11, cranialDeg: 0 }), { type: 'cycle-carm', direction: 1 });
+    expect(sim.carmAngles).toEqual({ laoDeg: 0, cranialDeg: 35 });
+  });
+
+  it('counts a final projection only if the beam differs by at least 20 degrees from one already used', () => {
+    const p = playGoodCase({ oneFinalView: true });
+    expect(p.sim.finalProjections).toHaveLength(1);
+    // Nudge by 10 degrees: a second angiogram from nearly the same view does not count as a second projection.
+    p.do({ type: 'adjust-carm', laoDeg: 10, cranialDeg: 0 }).angiogram();
+    expect(p.sim.ended).toBe(false);
+    expect(p.sim.finalProjections).toHaveLength(1);
+    // Nudge a further 15 (25 degrees from the first): now it counts and the case ends.
+    p.do({ type: 'adjust-carm', laoDeg: 15, cranialDeg: 0 }).angiogram();
+    expect(p.sim.finalProjections).toHaveLength(2);
+    expect(p.sim.ended).toBe(true);
+  });
+});
+
 describe('the C-arm', () => {
   it('cycles through the presets in both directions and wraps', () => {
     let sim = createSimulation();

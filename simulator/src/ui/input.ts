@@ -3,12 +3,20 @@
  * key presses into engine actions or interface commands. The pure parts are unit tested; `InputState`
  * holds no DOM references, the lab screen feeds it events.
  */
+import { CARM } from '../config/anatomy';
 import type { Action, Controls } from '../engine/simulation';
 
 /** Things the interface itself does (not the simulation). */
-export type UiCommand = 'toggle-labels' | 'toggle-follow' | 'toggle-help' | 'toggle-mentor' | 'pause';
+export type UiCommand = 'toggle-labels' | 'toggle-follow' | 'toggle-help' | 'toggle-mentor' | 'toggle-view' | 'pause';
 
 export type KeyResult = { readonly kind: 'action'; readonly action: Action } | { readonly kind: 'ui'; readonly command: UiCommand };
+
+const nudge = (laoDeg: number, cranialDeg: number): KeyResult => ({ kind: 'action', action: { type: 'adjust-carm', laoDeg, cranialDeg } });
+
+/** Keys that repeat while held (the arrow keys keep nudging the C-arm); every other press fires once. */
+export function repeats(key: string): boolean {
+  return key.toLowerCase().startsWith('arrow');
+}
 
 /** What a single press of this key does, or null if it is only a held key or unused. */
 export function keyPress(key: string, shift: boolean): KeyResult | null {
@@ -30,6 +38,16 @@ export function keyPress(key: string, shift: boolean): KeyResult | null {
       return { kind: 'action', action: { type: 'heparin' } };
     case 'v':
       return { kind: 'action', action: { type: 'cycle-carm', direction: shift ? -1 : 1 } };
+    case 'arrowright':
+      return nudge(shift ? CARM.coarseStepDeg : CARM.fineStepDeg, 0);
+    case 'arrowleft':
+      return nudge(-(shift ? CARM.coarseStepDeg : CARM.fineStepDeg), 0);
+    case 'arrowup':
+      return nudge(0, shift ? CARM.coarseStepDeg : CARM.fineStepDeg);
+    case 'arrowdown':
+      return nudge(0, -(shift ? CARM.coarseStepDeg : CARM.fineStepDeg));
+    case 'tab':
+      return { kind: 'ui', command: 'toggle-view' };
     case 'l':
       return { kind: 'ui', command: 'toggle-labels' };
     case 'f':

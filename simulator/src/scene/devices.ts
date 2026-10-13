@@ -15,6 +15,7 @@ import type { AnatomyScene } from './anatomyScene';
 import {
   WIRE_ROUTES,
   buildChainPath,
+  buildGuidePath,
   chainDistance,
   indexCountFor,
   overlayFor,
@@ -121,8 +122,7 @@ export function createDeviceView(anatomy: AnatomyScene): DeviceView {
   const latticeMaterial = own(new THREE.MeshBasicMaterial({ color: 0xe4eaf0, wireframe: true }));
 
   // --- the guide: the route to the root, then a few mm into the left main ----------------------
-  const lmStart = vesselPosition('LM', 0);
-  const guidePath = new Path([...route.points, lmStart, vesselPosition('LM', 5)]);
+  const guidePath = buildGuidePath();
   const engagedExtra = guidePath.length - route.length;
   const guide = own(wrap(new GrowingTube(guidePath, GUIDE_RADIUS, steel, 12, 'guide-catheter', 1.5)));
   anatomy.root.add(guide.mesh);

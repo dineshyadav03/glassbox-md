@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { InputState, WHEEL_PULSE_MS, isHeldKey, keyPress } from '../src/ui/input';
+import { InputState, WHEEL_PULSE_MS, isHeldKey, keyPress, repeats } from '../src/ui/input';
 
 describe('keyPress', () => {
   it('selects the four movable tools with 1 to 4', () => {
@@ -16,6 +16,19 @@ describe('keyPress', () => {
   it('cycles the C-arm forward with V and back with Shift+V', () => {
     expect(keyPress('v', false)).toEqual({ kind: 'action', action: { type: 'cycle-carm', direction: 1 } });
     expect(keyPress('V', true)).toEqual({ kind: 'action', action: { type: 'cycle-carm', direction: -1 } });
+  });
+
+  it('nudges the C-arm with the arrow keys, five times as far with Shift, and repeats while held', () => {
+    expect(keyPress('ArrowRight', false)).toEqual({ kind: 'action', action: { type: 'adjust-carm', laoDeg: 1, cranialDeg: 0 } });
+    expect(keyPress('ArrowLeft', true)).toEqual({ kind: 'action', action: { type: 'adjust-carm', laoDeg: -5, cranialDeg: 0 } });
+    expect(keyPress('ArrowUp', false)).toEqual({ kind: 'action', action: { type: 'adjust-carm', laoDeg: 0, cranialDeg: 1 } });
+    expect(keyPress('ArrowDown', true)).toEqual({ kind: 'action', action: { type: 'adjust-carm', laoDeg: 0, cranialDeg: -5 } });
+    expect(repeats('ArrowUp')).toBe(true);
+    expect(repeats('g')).toBe(false);
+  });
+
+  it('switches between the 3D and X-ray views with Tab', () => {
+    expect(keyPress('Tab', false)).toEqual({ kind: 'ui', command: 'toggle-view' });
   });
 
   it('maps interface keys', () => {
