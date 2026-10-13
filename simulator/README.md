@@ -30,7 +30,7 @@ Needs Node 20 or newer.
 | Phase | What | State |
 |---|---|---|
 | 0 | Scaffold, strict TypeScript, tests, disclaimer start screen | done |
-| 1 | Pure logic: flow and TIMI, devices, physiology, guide and wire, stages, debrief | in progress |
+| 1 | Pure logic: flow and TIMI, devices, physiology, guide and wire, stages, debrief | done: 289 unit tests, no UI yet |
 | 2 | Procedural heart and vessels, 3D view | not started |
 | 3 | Devices and the six-stage procedure UI | not started |
 | 4 | X-ray view and C-arm | not started |

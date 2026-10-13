@@ -274,8 +274,13 @@ export const DEBRIEF = {
   contrastWarnMl: 180,
   fluoroOkMinutes: 10,
   fluoroWarnMinutes: 15,
+  /** Up to this long past the safe speed is treated as a transient, not forcing. */
+  forcingOkSeconds: 0.5,
   forcingWarnSeconds: 3,
   minFinalViews: 2,
+  gradeExcellentAt: 90,
+  gradeGoodAt: 75,
+  gradeAcceptableAt: 60,
 } as const;
 
 // --- helpers over the tables above ---------------------------------------------------------------
