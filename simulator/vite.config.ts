@@ -6,9 +6,9 @@ export default defineConfig({
   // matches CATHLAB_PATH.
   base: '/cathlab/',
   build: {
-    // Three.js alone is about 570 kB (145 kB gzipped). It sits in its own chunk that is loaded only when
-    // someone leaves the start screen, so the warning's default 500 kB is just noise here.
-    chunkSizeWarningLimit: 650,
+    // Three.js alone is about 570 kB (145 kB gzipped). With the lab it sits in its own chunk that is loaded only
+    // when someone leaves the start screen, so the warning's default 500 kB is just noise here.
+    chunkSizeWarningLimit: 750,
   },
   test: {
     environment: 'node',

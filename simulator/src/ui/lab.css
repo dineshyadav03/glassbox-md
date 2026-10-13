@@ -147,3 +147,11 @@
 @media (min-width: 901px) {
   .lab { height: 100vh; height: 100dvh; }
 }
+
+/* The X-ray screen covers the 3D view; the view buttons stay on top of it. */
+.xray { position: absolute; inset: 0; z-index: 3; background: #000; display: flex; align-items: center; justify-content: center; }
+.xray-canvas { max-width: 100%; max-height: 100%; width: auto; height: 100%; aspect-ratio: 1 / 1; display: block; }
+.view-tools { z-index: 5; }
+.carm-panel { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.carm-panel select { background: #0f141a; color: var(--ink); border: 1px solid #3a4a5c; border-radius: 4px; padding: 4px 6px; }
+.carm-readout { font-family: ui-monospace, Consolas, monospace; font-size: 0.85rem; color: var(--muted); }

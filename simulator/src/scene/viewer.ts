@@ -31,6 +31,8 @@ export interface Viewer {
   frameRoute(): void;
   setLabelsVisible(visible: boolean): void;
   readonly labelsVisible: boolean;
+  /** Stop drawing (and positioning labels) while something else, such as the X-ray image, covers the view. */
+  setRendering(on: boolean): void;
   dispose(): void;
 }
 
@@ -79,6 +81,7 @@ export function createViewer(container: HTMLElement, anatomy: AnatomyScene, opti
     return node;
   });
   let showLabels = true;
+  let rendering = true;
   const raycaster = new THREE.Raycaster();
   const scratch = new THREE.Vector3();
   const direction = new THREE.Vector3();
@@ -199,8 +202,10 @@ export function createViewer(container: HTMLElement, anatomy: AnatomyScene, opti
     }
     controls.update();
     anatomy.setBeatPhase(reducedMotion ? 0 : cardiacPhase((now - began) / 1000, options.beatsPerMinute?.() ?? PHYSIOLOGY.baseHr));
-    renderer.render(scene, camera);
-    updateLabels(width, height);
+    if (rendering) {
+      renderer.render(scene, camera);
+      updateLabels(width, height);
+    }
   };
   frame = requestAnimationFrame(loop);
 
@@ -236,6 +241,9 @@ export function createViewer(container: HTMLElement, anatomy: AnatomyScene, opti
     },
     get labelsVisible(): boolean {
       return showLabels;
+    },
+    setRendering(on: boolean): void {
+      rendering = on;
     },
     dispose(): void {
       cancelAnimationFrame(frame);

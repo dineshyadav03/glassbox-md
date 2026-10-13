@@ -7,12 +7,13 @@ import { buildAnatomyScene } from '../scene/anatomyScene';
 import { focusPoint, suggestedDistance } from '../scene/deviceMath';
 import { createDeviceView } from '../scene/devices';
 import { createViewer } from '../scene/viewer';
+import { createXrayDisplay } from '../xray/display';
 import { act, createSimulation, tick, type Action, type Simulation } from '../engine/simulation';
 import { createDebrief } from './debriefScreen';
 import { el } from './dom';
 import { createHud, type HudFlags } from './hud';
 import { monitorView } from './hudModel';
-import { InputState, isHeldKey, keyPress, type UiCommand } from './input';
+import { InputState, isHeldKey, keyPress, repeats, type UiCommand } from './input';
 import { NO_WEBGL_MESSAGE } from './labContent';
 import './lab.css';
 
@@ -25,7 +26,7 @@ const MAX_STEP = 0.05;
  */
 export function renderLabScreen(root: HTMLElement, onBack: () => void): void {
   let sim: Simulation = createSimulation();
-  let flags: HudFlags = { paused: false, labels: true, follow: true, help: false, mentor: true };
+  let flags: HudFlags = { view: '3d', paused: false, labels: true, follow: true, help: false, mentor: true };
   let lastCameraKey = '';
   let debriefShown = false;
   let disposed = false;
@@ -40,6 +41,7 @@ export function renderLabScreen(root: HTMLElement, onBack: () => void): void {
     window.removeEventListener('blur', onBlur);
     viewer?.dispose();
     devices.dispose();
+    xray.dispose();
     return true;
   };
 
@@ -66,6 +68,13 @@ export function renderLabScreen(root: HTMLElement, onBack: () => void): void {
         flags = { ...flags, follow: !flags.follow };
         if (flags.follow) refocus(true);
         break;
+      case 'toggle-view': {
+        const view = flags.view === '3d' ? 'xray' : '3d';
+        flags = { ...flags, view };
+        xray.element.classList.toggle('hidden', view !== 'xray');
+        viewer?.setRendering(view === '3d');
+        break;
+      }
       case 'toggle-help':
         flags = { ...flags, help: !flags.help };
         break;
@@ -106,6 +115,9 @@ export function renderLabScreen(root: HTMLElement, onBack: () => void): void {
   });
   root.replaceChildren(hud.root);
 
+  const xray = createXrayDisplay();
+  xray.element.classList.add('hidden');
+  hud.stage.append(xray.element);
   const anatomy = buildAnatomyScene();
   const devices = createDeviceView(anatomy);
 
@@ -130,6 +142,7 @@ export function renderLabScreen(root: HTMLElement, onBack: () => void): void {
     onFrame: (dt) => {
       step(dt);
       devices.update(sim);
+      xray.update(sim, performance.now(), monitorView(sim).heartRate, flags.view === 'xray');
       hud.update(sim, flags, dt);
       if (sim.ended && sim.debrief && !debriefShown) {
         debriefShown = true;
@@ -165,7 +178,7 @@ export function renderLabScreen(root: HTMLElement, onBack: () => void): void {
       if (!flags.paused) input.keyDown(key);
       return;
     }
-    if (event.repeat) return;
+    if (event.repeat && !repeats(key)) return;
     const result = keyPress(key, event.shiftKey);
     if (!result) return;
     event.preventDefault();

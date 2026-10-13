@@ -7,8 +7,8 @@ export const LAB_DISCLAIMER =
 
 /** What is and is not here yet, shown in the help panel so the screen never overclaims. */
 export const LAB_LIMITS =
-  'Not built yet: the X-ray (fluoroscopy) view and C-arm images, the demo autopilot and sound. Contrast is drawn ' +
-  'straight onto the 3D vessels, and the C-arm projection is only a setting that the final angiogram step counts.';
+  'Not built yet: the demo autopilot and sound. The X-ray picture is a simplified teaching image (flat shadows of a ' +
+  'stylised anatomy), and contrast also shows on the vessels in the 3D view as a teaching aid.';
 
 export const NO_WEBGL_MESSAGE =
   'This browser could not start WebGL, so the 3D lab cannot be shown. Try a current version of Chrome, Edge, Firefox or Safari, ' +

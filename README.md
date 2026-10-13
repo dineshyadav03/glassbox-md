@@ -585,8 +585,9 @@ leading to a dead link. It is **not connected to the diagnostic pipeline**: it r
 case and writes nothing, and no patient report links to it, because it simulates a
 procedure with invented physiology and a link from a report could read as a recommendation.
 It sits behind the same login when login is configured, and contains no patient data. See
-[`simulator/README.md`](simulator/README.md) for its status (the rules, scoring, 3D anatomy and the
-six-step procedure with a scored debrief are built and tested; the X-ray view and demo mode are not yet).
+[`simulator/README.md`](simulator/README.md) for its status (the rules, scoring, 3D anatomy, the
+six-step procedure with a scored debrief, and an X-ray view with a movable C-arm are built and tested; the demo mode
+is not yet).
 
 ## Deployment checklist
 

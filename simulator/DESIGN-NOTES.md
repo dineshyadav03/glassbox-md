@@ -107,8 +107,34 @@ pipeline: no case data goes in, nothing comes out, and no report links to it.
   deployed stent were rendered from a scripted finished case rather than played live (the browser pane here stops
   animating when hidden). The WebGL-missing message and touch holding have not been tried on real devices.
 
+## Phase 4: the X-ray view and the C-arm
+
+- **The picture is orthographic.** Real fluoroscopy has a diverging beam and magnification; this is a flat shadow of
+  the same 3D model the other view draws, seen along the C-arm's beam. LAO is positive and cranial is positive; the
+  patient's left is on the right of the image, as on a cath-lab monitor. Foreshortening therefore comes out of the
+  geometry (a vessel seen end-on is short) and different projections really do show different vessels.
+- **The backdrop is a sketch.** Ribs, spine, forearm and upper-arm bones and a collar bone are simple shapes placed
+  by hand, and the heart is the convex shadow of the heart surface, blurred. There are no lungs, diaphragm or soft
+  tissue detail. It exists to give the catheters a believable place to move, not to be anatomical.
+- **What is visible when.** The anatomy backdrop is always there; the guide, wire, balloon markers and stent struts only
+  while the beam is on (pedal down, or a recorded run being acquired); dye only during a run, and only if the run was
+  started with the pedal down or the pedal is pressed during it. This is the engine's existing "recorded" rule.
+- **The angiogram is the best-filled frame**, kept when the run ends and shown as "LAST ANGIOGRAM (held)" until the next
+  fluoroscopy. If the learner switches to the 3D view mid-run the display keeps capturing, so the frame is not lost.
+- **A different projection means 20 degrees.** After the stent, a recorded selective injection counts as a new final
+  projection only if its beam is at least 20 degrees from every one already counted, so nudging the angle by a few degrees
+  does not satisfy step 6. The 20 is mine (`CARM.minSeparationDeg`); the specification only asks for "two projections".
+- **The field of view follows the tip**, using the same distance the 3D camera uses (times 1.25), eased over about a second.
+- **Dye is drawn on its own layer** where overlapping segments keep the darkest, then multiplied onto the image. Drawing
+  each translucent segment separately made beads and bristles at every joint.
+- **Dissections** show as a filling defect in the dye (more when unsealed than when a stent covers the tear).
+- **Verified by eye** in a browser at several views: the arm view while the guide advances, a mid-run cine with the lesion
+  pinch, the held angiogram after a stent. Its content rules (visibility, pinch, defect, foreshortening) are unit tested.
+  Frame rate and feel on a real GPU, and the look on other browsers (the blur uses canvas filters, which Safari lacks, so
+  soft tissue would look sharper there), have not been checked.
+
 ## Not done yet
 
-The X-ray view and C-arm images, sound, and the demo autopilot. The specification's "demo ends with an Excellent debrief" is therefore only
+Sound, and the demo autopilot. The specification's "demo ends with an Excellent debrief" is therefore only
 tested at the logic level (`tests/scenario.test.ts`), by chaining the real modules for a good case and for the
 bad case.

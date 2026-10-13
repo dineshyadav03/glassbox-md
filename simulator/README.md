@@ -46,7 +46,7 @@ server. Needs Node 20 or newer.
 | 1 | Pure logic: flow and TIMI, devices, physiology, guide and wire, stages, debrief | done: 289 unit tests |
 | 2 | Procedural heart and vessels, 3D view | done: beating heart, six coronaries at true lumen, aorta, wrist-to-root route, labels, orbit camera |
 | 3 | Devices and the six-stage procedure UI | done: playable end to end with a scored debrief (see below for what is simplified) |
-| 4 | X-ray view and C-arm | not started |
+| 4 | X-ray view and C-arm | done: live fluoroscopy, last-image hold, contrast cine and a movable C-arm |
 | 5 | Demo autopilot and complications | not started |
 | 6 | README polish, CI, deploy decision | not started |
 
@@ -61,9 +61,16 @@ advance and retract, `A`/`D` rotate, `Shift` fine, `E`/`Q` inflate and deflate, 
 `7` measure, `Space` or `6` fluoro pedal, `V` C-arm, `L` labels, `F` follow, `H` help, `M` mentor, `Esc` pause.
 On a touch screen the on-screen buttons can be held instead.
 
-**What is not built:** the X-ray (fluoroscopy) view and C-arm images, the demo autopilot, and sound. Until the X-ray
-view exists, contrast is drawn straight onto the 3D vessels, and the C-arm projection is only a setting that the
-final-angiogram step counts (two different projections are required). The start screen and the help panel say so.
+**The X-ray view** (`Tab`): a fluoroscopy screen showing a simplified, flat shadow of the case from the C-arm's
+angle: ribs, spine, arm bones and the heart's beating shadow. Catheters, the wire, balloon markers and stent struts
+appear only while the pedal is down; with the pedal up the last image is held. Contrast shows as a dark column the
+width of the real lumen, so the 90% lesion is a pinch, a stent opens it, and a tear leaves a filling defect. Each
+contrast run is acquired as a cine, and its best-filled frame is held as the angiogram. The C-arm has presets (`V`),
+arrow-key nudging (1 degree, Shift 5), and a panel; a second final angiogram counts only if its beam differs from the
+first by at least 20 degrees. The field of view follows the tip (wide for the arm, tight on the arteries).
+
+**What is not built:** the demo autopilot and sound. Contrast also still shows on the vessels in the 3D view, as a
+teaching aid. The start screen and the help panel say so.
 
 ## How the 3D part is organised
 
@@ -76,7 +83,9 @@ final-angiogram step counts (two different projections are required). The start 
 - `src/scene/devices.ts` draws the devices, dissection flaps and contrast from a `Simulation`; headless-safe.
 - `src/ui/hudModel.ts` computes everything each panel shows (tested); `hud.ts`, `gauges.ts`, `monitor.ts` and
   `debriefScreen.ts` only place it in the DOM; `input.ts` maps keys, on-screen holds and the wheel to controls.
-- `src/scene/viewer.ts` and `src/ui/labScreen.ts` are the only code that touches WebGL, frames and browser events.
-  They are checked by playing in a browser, not by unit tests.
+- `src/xray/` is the X-ray view: `projection.ts` (C-arm geometry), `frame.ts` (what the image contains, as shapes; tested)
+  and `display.ts` (the canvas: noise, collimator, last-image hold, angiogram capture).
+- `src/scene/viewer.ts`, `src/xray/display.ts` and `src/ui/labScreen.ts` are the only code that touches WebGL, canvases,
+  frames and browser events. They are checked by playing in a browser, not by unit tests.
 - Each vessel's 3D path is cut or extended to exactly its configured length, so what the rules say (distance along
   a rail) and what is drawn cannot drift apart.

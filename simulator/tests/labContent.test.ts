@@ -34,8 +34,9 @@ describe('lab text', () => {
 
   it('says plainly what is not built yet', () => {
     expect(LAB_LIMITS.toLowerCase()).toContain('not built yet');
-    expect(LAB_LIMITS).toMatch(/X-ray/);
     expect(LAB_LIMITS).toMatch(/demo/);
+    expect(LAB_LIMITS).toMatch(/sound/);
+    expect(LAB_LIMITS).toMatch(/simplified/);
   });
 
   it('tells the user how to recover when WebGL is missing, and warns before ending a case', () => {
@@ -48,10 +49,11 @@ describe('lab text', () => {
     expect(Object.keys(STATUS_WORD).sort()).toEqual(['bad', 'ok', 'warn']);
   });
 
-  it('does not claim keys that are not built: the X-ray, sound and arrow keys are marked as such in the controls list', () => {
+  it('does not claim keys that are not built: only sound is marked as such in the controls list', () => {
     const text = CONTROLS.map(([k, v]) => `${k} ${v}`).join('\n');
-    expect(text).toMatch(/X-ray view not built yet/);
     expect(text).toMatch(/sound not built yet/);
-    expect(text).toMatch(/arrow-key fine-tuning not built yet/);
+    expect(text).not.toMatch(/X-ray view not built yet/);
+    expect(text).toMatch(/Tab Switch between the 3D view and the X-ray view/);
+    expect(text).toMatch(/arrow keys/);
   });
 });

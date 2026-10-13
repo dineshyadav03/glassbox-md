@@ -31,8 +31,8 @@ export const CONTROLS: readonly (readonly [string, string])[] = [
   ['G', 'Give heparin'],
   ['5 or C', 'Inject contrast'],
   ['Space or 6 (hold)', 'Fluoroscopy pedal'],
-  ['Tab', 'Switch between the 3D view and the X-ray view (X-ray view not built yet)'],
-  ['V / Shift+V', 'Cycle the C-arm presets forward / back (arrow-key fine-tuning not built yet)'],
+  ['Tab', 'Switch between the 3D view and the X-ray view'],
+  ['V / arrow keys', 'Cycle the C-arm presets (Shift+V goes back) / fine-tune the angle (Shift: 5 degrees)'],
   ['F', 'Follow the device tip with the camera'],
   ['L', 'Toggle anatomy labels'],
   ['H / M / N', 'Help / mentor panel / sound (sound not built yet)'],
@@ -42,5 +42,5 @@ export const CONTROLS: readonly (readonly [string, string])[] = [
 
 /** Honest build status, shown on the screen so a half-built app never looks finished. */
 export const BUILD_STATUS =
-  'Build status: the 3D lab is playable end to end: all six steps, the devices, the patient monitor and the scored debrief. ' +
-  'The X-ray (fluoroscopy) view and the demo mode are not built yet, so the demo button is disabled; contrast is shown on the 3D vessels instead.';
+  'Build status: the lab is playable end to end: all six steps, the devices, the 3D and X-ray views with a movable C-arm, ' +
+  'the patient monitor and the scored debrief. The demo mode and sound are not built yet, so the demo button is disabled.';

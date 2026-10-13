@@ -3,6 +3,7 @@
  * stage checklist, the patient monitor and the mentor. `update` redraws from a `Simulation`; everything
  * shown is computed in `hudModel.ts` (tested), this file only places it. Text uses textContent only.
  */
+import { CARM, CARM_PRESETS } from '../config/anatomy';
 import { createSimulation, type Action, type Simulation } from '../engine/simulation';
 import { CONTROLS } from './startContent';
 import { el, setClass, setText } from './dom';
@@ -39,6 +40,7 @@ export interface HudHandlers {
 }
 
 export interface HudFlags {
+  readonly view: '3d' | 'xray';
   readonly paused: boolean;
   readonly labels: boolean;
   readonly follow: boolean;
@@ -95,11 +97,13 @@ export function createHud(handlers: HudHandlers): Hud {
   const frameRoute = button('Whole route');
   const labelsButton = button('Labels (L)');
   const followButton = button('Follow tip (F)');
+  const viewButton = button('X-ray view (Tab)');
+  viewButton.addEventListener('click', () => handlers.onUi('toggle-view'));
   frameHeart.addEventListener('click', handlers.onFrameHeart);
   frameRoute.addEventListener('click', handlers.onFrameRoute);
   labelsButton.addEventListener('click', () => handlers.onUi('toggle-labels'));
   followButton.addEventListener('click', () => handlers.onUi('toggle-follow'));
-  const viewTools = el('div', { className: 'view-tools' }, [frameHeart, frameRoute, labelsButton, followButton]);
+  const viewTools = el('div', { className: 'view-tools' }, [viewButton, frameHeart, frameRoute, labelsButton, followButton]);
 
   // --- the tool bar ---------------------------------------------------------------------------------------------
   const toolNodes = new Map<string, HTMLButtonElement>();
@@ -123,6 +127,28 @@ export function createHud(handlers: HudHandlers): Hud {
   const carmButton = button('V C-arm', 'tool');
   carmButton.addEventListener('click', () => handlers.onAction({ type: 'cycle-carm', direction: 1 }));
   toolBar.append(heparinButton, carmButton);
+
+  // --- the C-arm panel ----------------------------------------------------------------------------------------
+  const carmSelect = el('select', { attrs: { 'aria-label': 'C-arm projection' } });
+  CARM_PRESETS.forEach((p, i) => carmSelect.append(el('option', { text: p.label, attrs: { value: String(i) } })));
+  carmSelect.append(el('option', { text: 'Custom', attrs: { value: 'custom', disabled: 'true' } }));
+  carmSelect.addEventListener('change', () => handlers.onAction({ type: 'select-carm', index: Number(carmSelect.value) }));
+  const nudge = (text: string, title: string, lao: number, cra: number): HTMLButtonElement => {
+    const b = button(text, 'secondary', title);
+    b.addEventListener('click', () => handlers.onAction({ type: 'adjust-carm', laoDeg: lao, cranialDeg: cra }));
+    return b;
+  };
+  const step = CARM.coarseStepDeg;
+  const carmReadoutText = el('span', { className: 'carm-readout' });
+  const carmPanel = el('div', { className: 'carm-panel' }, [
+    el('span', { className: 'lab-label', text: 'C-arm' }),
+    carmSelect,
+    nudge('◀ RAO', `Swing the detector ${step}° toward the patient's right (arrow keys: 1°, Shift 5°)`, -step, 0),
+    nudge('LAO ▶', `Swing the detector ${step}° toward the patient's left`, step, 0),
+    nudge('▲ CRA', `Tilt the beam ${step}° toward the head`, 0, step),
+    nudge('▼ CAU', `Tilt the beam ${step}° toward the feet`, 0, -step),
+    carmReadoutText,
+  ]);
 
   // --- the tool panel ---------------------------------------------------------------------------------------------
   const dial = createDial();
@@ -214,7 +240,7 @@ export function createHud(handlers: HudHandlers): Hud {
 
   const root = el('main', { className: 'lab' }, [
     bar,
-    el('div', { className: 'lab-main' }, [el('section', { className: 'lab-view' }, [el('div', { className: 'stage-wrap' }, [stage, viewTools]), toolBar, toolPanel]), side]),
+    el('div', { className: 'lab-main' }, [el('section', { className: 'lab-view' }, [el('div', { className: 'stage-wrap' }, [stage, viewTools]), toolBar, carmPanel, toolPanel]), side]),
     overlays,
   ]);
 
@@ -229,6 +255,10 @@ export function createHud(handlers: HudHandlers): Hud {
     update(sim: Simulation, flags: HudFlags, dt: number): void {
       setText(clock, timeString(sim.time));
       setText(carm, carmReadout(sim));
+      setText(carmReadoutText, `LAO ${Math.round(sim.carmAngles.laoDeg)}°  CRA ${Math.round(sim.carmAngles.cranialDeg)}°`);
+      const presetIndex = CARM_PRESETS.findIndex((p) => p.laoDeg === sim.carmAngles.laoDeg && p.cranialDeg === sim.carmAngles.cranialDeg);
+      const wanted = presetIndex >= 0 ? String(presetIndex) : 'custom';
+      if (carmSelect.value !== wanted) carmSelect.value = wanted;
 
       // Tools.
       for (const t of toolButtons(sim)) {
@@ -307,6 +337,8 @@ export function createHud(handlers: HudHandlers): Hud {
       // Toggles and overlays.
       setClass(labelsButton, 'on', flags.labels);
       labelsButton.setAttribute('aria-pressed', String(flags.labels));
+      setClass(viewButton, 'on', flags.view === 'xray');
+      viewButton.setAttribute('aria-pressed', String(flags.view === 'xray'));
       setClass(followButton, 'on', flags.follow);
       followButton.setAttribute('aria-pressed', String(flags.follow));
       setClass(help, 'hidden', !flags.help);
