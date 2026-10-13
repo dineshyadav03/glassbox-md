@@ -113,7 +113,7 @@ export function createDeviceView(anatomy: AnatomyScene): DeviceView {
     return thing;
   };
 
-  const steel = own(new THREE.MeshStandardMaterial({ color: 0xcfd8e3, metalness: 0.6, roughness: 0.3 }));
+  const steel = own(new THREE.MeshStandardMaterial({ color: 0xe6edf5, metalness: 0.3, roughness: 0.35, emissive: 0x2a3a4a }));
   const wireMaterial = own(new THREE.MeshStandardMaterial({ color: 0xf2f6fa, metalness: 0.4, roughness: 0.25, emissive: 0x335577 }));
   const tipMaterial = own(new THREE.MeshStandardMaterial({ color: 0xffd54a, emissive: 0x886600, roughness: 0.4 }));
   const shaftMaterial = own(new THREE.MeshStandardMaterial({ color: 0x9fb2c4, metalness: 0.3, roughness: 0.5 }));
@@ -144,7 +144,7 @@ export function createDeviceView(anatomy: AnatomyScene): DeviceView {
     wires.set(id, tube);
     anatomy.beating.add(tube.mesh);
   }
-  const wireTip = new THREE.Mesh(new THREE.SphereGeometry(0.55, 10, 8), tipMaterial);
+  const wireTip = new THREE.Mesh(new THREE.SphereGeometry(0.42, 10, 8), tipMaterial);
   wireTip.name = 'wire-tip';
   wireTip.visible = false;
   anatomy.beating.add(wireTip);

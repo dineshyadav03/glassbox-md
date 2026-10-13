@@ -153,3 +153,19 @@ describe('where the camera looks', () => {
     expect(distance(focusPoint(p.sim), vesselPosition('LAD', p.sim.balloon.centreS!))).toBeLessThan(1e-6);
   });
 });
+
+describe('suggestedDistance', () => {
+  it('stays far for the arm, nearer in the chest, nearest for the wire and catheters', async () => {
+    const { suggestedDistance } = await import('../src/scene/deviceMath');
+    const fresh = createSimulation();
+    expect(suggestedDistance(fresh)).toBeGreaterThan(200);
+    const inChest = new Player().until({ advance: 1 }, (s) => s.guide.s >= 700);
+    expect(suggestedDistance(inChest.sim)).toBeLessThan(suggestedDistance(fresh));
+    const p = playGoodCase({ stopAfterWire: true });
+    p.do({ type: 'select-tool', tool: 'wire' });
+    const wire = suggestedDistance(p.sim);
+    p.do({ type: 'select-tool', tool: 'balloon' });
+    expect(suggestedDistance(p.sim)).toBeLessThan(wire);
+    expect(wire).toBeLessThan(suggestedDistance(inChest.sim));
+  });
+});

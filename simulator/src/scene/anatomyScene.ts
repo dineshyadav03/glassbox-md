@@ -156,7 +156,8 @@ export function buildAnatomyScene(): AnatomyScene {
   const heartMesh = makeHeartMesh();
   beating.add(heartMesh);
 
-  const arteryMaterial = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.4, metalness: 0, side: THREE.DoubleSide });
+  // Translucent walls, so the wire and catheters inside can be seen through them.
+  const arteryMaterial = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.4, metalness: 0, side: THREE.DoubleSide, transparent: true, opacity: 0.62, depthWrite: false });
   const coronaryTubes = {} as Record<VesselId, TubeMesh>;
   const coronaries = {} as Record<VesselId, THREE.Mesh>;
   for (const id of VESSEL_ORDER) {
@@ -182,7 +183,7 @@ export function buildAnatomyScene(): AnatomyScene {
 
   // The access arteries, wrist to the brachiocephalic trunk (the last stretch of the route lies inside the aorta).
   const accessPath = route.slice(0, AORTA_ENTRY_S);
-  const accessMaterial = new THREE.MeshStandardMaterial({ color: 0xd9776b, roughness: 0.45, side: THREE.DoubleSide });
+  const accessMaterial = new THREE.MeshStandardMaterial({ color: 0xd9776b, roughness: 0.45, side: THREE.DoubleSide, transparent: true, opacity: 0.45, depthWrite: false });
   const accessTube = new TubeMesh(accessPath, (s) => routeDiameterAt(s) / 2, () => [1, 1, 1], accessMaterial, 4, 16, 'access-route');
   root.add(accessTube.mesh);
 

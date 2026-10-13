@@ -144,3 +144,15 @@ export function focusPoint(sim: Simulation): Vec3 {
   if (sim.guide.engaged) return vesselPosition('LM', 0);
   return routePosition(Math.min(sim.guide.s, AORTIC_ROOT_S));
 }
+
+/**
+ * How far the camera should sit from what it follows, mm: far enough to see the arm while the guide
+ * travels, close once it is in the heart, closest for the wire and the catheters in the artery.
+ */
+export function suggestedDistance(sim: Simulation): number {
+  if (sim.tool === 'balloon' || sim.tool === 'stent') return 55;
+  if (sim.tool === 'wire') return 65;
+  if (sim.guide.engaged) return 120;
+  if (sim.guide.s < 520) return 240;
+  return 150;
+}

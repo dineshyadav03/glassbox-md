@@ -1,27 +1,15 @@
+import { el } from './dom';
 import { BUILD_STATUS, CASE_VIGNETTE, CONTROLS, DISCLAIMER, TITLE, YOU_WILL } from './startContent';
-
-function el<K extends keyof HTMLElementTagNameMap>(
-  tag: K,
-  options: { className?: string; text?: string } = {},
-  children: (Node | string)[] = [],
-): HTMLElementTagNameMap[K] {
-  const node = document.createElement(tag);
-  if (options.className) node.className = options.className;
-  if (options.text !== undefined) node.textContent = options.text;
-  for (const child of children) node.append(child);
-  return node;
-}
 
 /**
  * Render the start screen into `root`. Text is set with textContent only, never innerHTML.
- * `onEnter` opens the 3D anatomy preview (the only part of the lab that exists so far).
+ * `onEnter` opens the lab.
  */
 export function renderStartScreen(root: HTMLElement, onEnter: () => void): void {
   const disclaimer = el('p', { className: 'disclaimer', text: DISCLAIMER });
   disclaimer.setAttribute('role', 'note');
 
-  const enter = el('button', { text: 'Enter the cath lab (anatomy preview)' });
-  enter.title = 'Opens the 3D anatomy. The procedure itself is not built yet.';
+  const enter = el('button', { text: 'Enter the cath lab' });
   enter.addEventListener('click', onEnter);
   const demo = el('button', { className: 'secondary', text: 'Watch a demo first' });
   demo.disabled = true;

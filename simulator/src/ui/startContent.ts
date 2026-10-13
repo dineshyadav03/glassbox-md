@@ -31,17 +31,16 @@ export const CONTROLS: readonly (readonly [string, string])[] = [
   ['G', 'Give heparin'],
   ['5 or C', 'Inject contrast'],
   ['Space or 6 (hold)', 'Fluoroscopy pedal'],
-  ['Tab', 'Switch between the 3D view and the X-ray view'],
-  ['V / arrow keys', 'Cycle C-arm presets / fine-tune the angle'],
+  ['Tab', 'Switch between the 3D view and the X-ray view (X-ray view not built yet)'],
+  ['V / Shift+V', 'Cycle the C-arm presets forward / back (arrow-key fine-tuning not built yet)'],
   ['F', 'Follow the device tip with the camera'],
   ['L', 'Toggle anatomy labels'],
-  ['H / M / N', 'Help / mentor panel / sound'],
+  ['H / M / N', 'Help / mentor panel / sound (sound not built yet)'],
   ['Esc', 'Pause'],
-  ['Drag / Ctrl + wheel', 'Orbit / zoom the 3D camera'],
+  ['Drag / Ctrl + wheel', 'Orbit / zoom the 3D camera (the plain wheel moves the selected device)'],
 ];
 
 /** Honest build status, shown on the screen so a half-built app never looks finished. */
 export const BUILD_STATUS =
-  'Build status: the simulation logic layer (flow, devices, physiology, guide, wire, stages, scoring) is built and unit tested, ' +
-  'and the 3D anatomy (beating heart, coronary arteries, aorta and the route from the wrist) can be explored with the first button. ' +
-  'The procedure itself (devices on screen, controls, X-ray view and demo mode) is not built yet, so the demo button is disabled.';
+  'Build status: the 3D lab is playable end to end: all six steps, the devices, the patient monitor and the scored debrief. ' +
+  'The X-ray (fluoroscopy) view and the demo mode are not built yet, so the demo button is disabled; contrast is shown on the 3D vessels instead.';

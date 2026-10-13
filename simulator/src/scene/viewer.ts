@@ -7,15 +7,26 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { PHYSIOLOGY } from '../config/anatomy';
 import type { LabelAnchor } from '../anatomy/labels';
+import type { Vec3 } from '../anatomy/vec3';
 import type { AnatomyScene } from './anatomyScene';
 import { boxFramingDistance, cardiacPhase, easeInOut, framingDistance, isOnScreen, labelShownAt, ndcToPixels } from './framing';
 
 export interface ViewerOptions {
   /** Called with the label under the pointer, or null when it leaves. */
   readonly onLabelHover?: (label: LabelAnchor | null) => void;
+  /** Called once per frame, before drawing, with the seconds since the last frame (at most 0.25; the simulation sub-steps it). */
+  readonly onFrame?: (dt: number) => void;
+  /** Where the camera should follow right now, or null for a free camera. */
+  readonly followPoint?: () => Vec3 | null;
+  /** The mouse wheel without Ctrl: the lab moves the selected device with it. Ctrl+wheel zooms. */
+  readonly onWheel?: (deltaY: number) => void;
+  /** Heart rate for the beat animation, beats per minute. */
+  readonly beatsPerMinute?: () => number;
 }
 
 export interface Viewer {
+  /** Fly to look at a point from the current direction, `distance` mm away. */
+  focus(point: Vec3, distance: number): void;
   frameHeart(): void;
   frameRoute(): void;
   setLabelsVisible(visible: boolean): void;
@@ -52,7 +63,7 @@ export function createViewer(container: HTMLElement, anatomy: AnatomyScene, opti
   controls.dampingFactor = 0.08;
   controls.minDistance = 8;
   controls.maxDistance = 1800;
-  controls.zoomSpeed = 0.9;
+  controls.enableZoom = false; // the wheel moves the device; Ctrl+wheel zooms (handled below)
 
   // --- labels ------------------------------------------------------------------------------
   const layer = document.createElement('div');
@@ -123,6 +134,20 @@ export function createViewer(container: HTMLElement, anatomy: AnatomyScene, opti
     };
   };
 
+  const focus = (point: Vec3, distance: number): void => {
+    const target = new THREE.Vector3(point[0], point[1], point[2]);
+    const direction = camera.position.clone().sub(controls.target);
+    if (direction.lengthSq() < 1e-6) direction.set(0.1, 0.1, 1);
+    move = {
+      from: camera.position.clone(),
+      fromTarget: controls.target.clone(),
+      to: target.clone().addScaledVector(direction.normalize(), distance),
+      toTarget: target,
+      start: performance.now(),
+      seconds: 0.8,
+    };
+  };
+
   const frameHeart = (): void => flyTo(anatomy.heartBounds, new THREE.Vector3(0.12, 0.1, 1), 14);
   const frameRoute = (): void => flyTo(anatomy.routeBounds, new THREE.Vector3(0.1, 0.05, 1), 80);
 
@@ -154,8 +179,18 @@ export function createViewer(container: HTMLElement, anatomy: AnatomyScene, opti
   const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
   const began = performance.now();
   let frame = 0;
+  let last = began;
   const loop = (now: number): void => {
     frame = requestAnimationFrame(loop);
+    const dt = Math.min(0.25, Math.max(0, (now - last) / 1000));
+    last = now;
+    options.onFrame?.(dt);
+    const follow = move ? null : options.followPoint?.() ?? null;
+    if (follow) {
+      const delta = new THREE.Vector3(follow[0], follow[1], follow[2]).sub(controls.target).multiplyScalar(1 - Math.exp(-dt * 5));
+      controls.target.add(delta);
+      camera.position.add(delta);
+    }
     if (move) {
       const t = easeInOut((now - move.start) / (move.seconds * 1000));
       camera.position.lerpVectors(move.from, move.to, t);
@@ -163,7 +198,7 @@ export function createViewer(container: HTMLElement, anatomy: AnatomyScene, opti
       if (t >= 1) move = null;
     }
     controls.update();
-    anatomy.setBeatPhase(reducedMotion ? 0 : cardiacPhase((now - began) / 1000, PHYSIOLOGY.baseHr));
+    anatomy.setBeatPhase(reducedMotion ? 0 : cardiacPhase((now - began) / 1000, options.beatsPerMinute?.() ?? PHYSIOLOGY.baseHr));
     renderer.render(scene, camera);
     updateLabels(width, height);
   };
@@ -174,9 +209,25 @@ export function createViewer(container: HTMLElement, anatomy: AnatomyScene, opti
     move = null;
   };
   renderer.domElement.addEventListener('pointerdown', cancelMove);
-  renderer.domElement.addEventListener('wheel', cancelMove, { passive: true });
+  const onWheel = (event: WheelEvent): void => {
+    // In the stacked (narrow) layout the page itself scrolls; the wheel over the view must keep scrolling it
+    // rather than silently pulling the device back. Ctrl+wheel (and pinch) still zooms.
+    const pageScrolls = document.documentElement.scrollHeight > window.innerHeight + 1;
+    if (pageScrolls && !event.ctrlKey) return;
+    event.preventDefault();
+    if (event.ctrlKey) {
+      cancelMove();
+      const offset = camera.position.clone().sub(controls.target);
+      const length = Math.min(controls.maxDistance, Math.max(controls.minDistance, offset.length() * Math.exp(event.deltaY * 0.002)));
+      camera.position.copy(controls.target).addScaledVector(offset.normalize(), length);
+    } else {
+      options.onWheel?.(event.deltaY);
+    }
+  };
+  renderer.domElement.addEventListener('wheel', onWheel, { passive: false });
 
   return {
+    focus,
     frameHeart,
     frameRoute,
     setLabelsVisible(visible: boolean): void {
@@ -190,7 +241,7 @@ export function createViewer(container: HTMLElement, anatomy: AnatomyScene, opti
       cancelAnimationFrame(frame);
       observer.disconnect();
       renderer.domElement.removeEventListener('pointerdown', cancelMove);
-      renderer.domElement.removeEventListener('wheel', cancelMove);
+      renderer.domElement.removeEventListener('wheel', onWheel);
       controls.dispose();
       anatomy.dispose();
       renderer.dispose();

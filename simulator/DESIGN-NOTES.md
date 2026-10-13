@@ -80,9 +80,35 @@ pipeline: no case data goes in, nothing comes out, and no report links to it.
 - **Not verified here:** WebGL rendering is checked by eye in a browser (desktop and a 375 px phone width), not by
   automated tests; the WebGL-unavailable message has not been exercised on a real browser without WebGL.
 
+## Phase 3: devices and the procedure
+
+- **The engine composes, it does not decide.** Every rule (guide seating, wire branch choice, forcing risk,
+  pressure-diameter curve, rupture, sealing, flow, physiology, stage latching, tool unlocks, debrief) is in the Phase 1
+  modules. `src/engine/simulation.ts` only wires them over time and keeps the bookkeeping the specification asks for:
+  contrast volume, fluoroscopy seconds, distinct final projections, heparin timing.
+- **Catheters are delivered abstractly through the left main.** A balloon or stent leaves the guide into the LAD
+  (its proximal end at the start of the LAD) and slides along the LAD over the wire; the left main passage is not
+  simulated. It needs the wire to be in the LAD tree and stays at least 1 mm behind the wire tip.
+- **A deployed stent stays.** Withdrawing its delivery catheter files the stent as a lasting treatment and loads a fresh
+  one of the same size in the guide. A ruptured balloon is replaced the same way (and counted).
+- **Contrast without the pedal is wasted.** An injection with the fluoroscopy pedal up spends the dye but records
+  nothing, so it does not count as an angiogram. Without the X-ray view the dye is drawn on the 3D vessels either way.
+- **An aortic flush** (guide not seated) uses more dye and fills only the aorta, so it does not count either.
+- **A short stent cannot finish the case.** Covering the whole lesion is a required sub-task of step 5, so a stent that
+  stops short leaves the step open (the learner must add one, which the debrief counts). Ending the case early then scores
+  the geographic miss and grades it "Incomplete".
+- **A wire dissection on an untreated lesion is TIMI 1**, not 2: the tear's factor of 0.45 multiplies the lesion's own.
+- **The camera follows the tip** at a distance chosen by the tool (far for the arm, near for the wire and catheters);
+  dragging cancels a fly-to, `F` toggles following. The plain wheel moves the device, Ctrl+wheel zooms, and when the page
+  itself scrolls (narrow layouts) the wheel is left alone so it cannot silently pull a device back.
+- **Slow devices run slowly, not wrongly:** a frame is capped at 0.25 s of simulated time and split into 0.05 s steps.
+- **Verified by playing in a browser, with limits:** the opening steps, wire steering, resistance meter, balloon
+  inflation and gauge, contrast fill, mentor log and monitor were played with real key events; the debrief and the
+  deployed stent were rendered from a scripted finished case rather than played live (the browser pane here stops
+  animating when hidden). The WebGL-missing message and touch holding have not been tried on real devices.
+
 ## Not done yet
 
-Devices on screen, the procedure controls, the X-ray view and C-arm, the HUD, mentor panel and monitor,
-sound, and the demo autopilot. The specification's "demo ends with an Excellent debrief" is therefore only
+The X-ray view and C-arm images, sound, and the demo autopilot. The specification's "demo ends with an Excellent debrief" is therefore only
 tested at the logic level (`tests/scenario.test.ts`), by chaining the real modules for a good case and for the
 bad case.
