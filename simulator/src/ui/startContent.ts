@@ -42,5 +42,6 @@ export const CONTROLS: readonly (readonly [string, string])[] = [
 
 /** Honest build status, shown on the screen so a half-built app never looks finished. */
 export const BUILD_STATUS =
-  'Build status: the simulation logic layer (flow, devices, physiology, guide, wire, stages, scoring) is built and unit tested. ' +
-  'The 3D lab, X-ray view, controls and demo mode are not built yet, so the buttons below are disabled.';
+  'Build status: the simulation logic layer (flow, devices, physiology, guide, wire, stages, scoring) is built and unit tested, ' +
+  'and the 3D anatomy (beating heart, coronary arteries, aorta and the route from the wrist) can be explored with the first button. ' +
+  'The procedure itself (devices on screen, controls, X-ray view and demo mode) is not built yet, so the demo button is disabled.';

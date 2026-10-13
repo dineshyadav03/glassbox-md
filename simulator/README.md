@@ -43,11 +43,25 @@ server. Needs Node 20 or newer.
 | Phase | What | State |
 |---|---|---|
 | 0 | Scaffold, strict TypeScript, tests, disclaimer start screen | done |
-| 1 | Pure logic: flow and TIMI, devices, physiology, guide and wire, stages, debrief | done: 289 unit tests, no UI yet |
-| 2 | Procedural heart and vessels, 3D view | not started |
+| 1 | Pure logic: flow and TIMI, devices, physiology, guide and wire, stages, debrief | done: 289 unit tests |
+| 2 | Procedural heart and vessels, 3D view | done: beating heart, six coronaries at true lumen, aorta, wrist-to-root route, labels, orbit camera |
 | 3 | Devices and the six-stage procedure UI | not started |
 | 4 | X-ray view and C-arm | not started |
 | 5 | Demo autopilot and complications | not started |
 | 6 | README polish, CI, deploy decision | not started |
 
-The start screen's buttons stay disabled until the 3D lab exists.
+**What you can do today:** the first start-screen button opens an *anatomy preview*: orbit and zoom the beating
+heart, the six coronary arteries (drawn at their real lumen size, so the 90% lesion is a visible pinch), the aorta
+and the arteries from the right wrist. `L` toggles labels (hover for detail), `H` frames the heart, `R` frames the
+whole route, `Esc` goes back. That is all that is interactive: devices, the six-stage procedure, the X-ray view and
+the demo are not built, and the demo button stays disabled until they are.
+
+## How the 3D part is organised
+
+- `src/anatomy/` is pure maths with no Three.js: vectors, splines, the heart surface, the centrelines of every
+  vessel and the access route, tube meshes, label data. All of it is unit tested.
+- `src/scene/anatomyScene.ts` builds the Three.js scene from that, and can be built and checked in node.
+- `src/scene/viewer.ts` is the only code that touches WebGL and the DOM (renderer, orbit camera, beat loop, labels).
+  It is checked by looking at it in a browser, not by unit tests.
+- Each vessel's 3D path is cut or extended to exactly its configured length, so what the rules say (distance along
+  a rail) and what is drawn cannot drift apart.

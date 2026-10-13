@@ -51,7 +51,7 @@ function makeHeartMesh(): THREE.Mesh {
       const direction: Vec3 = [Math.sin(polar) * Math.cos(azimuth), Math.cos(polar), Math.sin(polar) * Math.sin(azimuth)];
       const p = heartSurfacePoint(direction);
       positions.push(p[0], p[1], p[2]);
-      const c = mix(MUSCLE, FAT, 0.85 * fatWeight(p));
+      const c = mix(MUSCLE, FAT, 0.6 * fatWeight(p));
       colours.push(c[0], c[1], c[2]);
     }
   }
@@ -123,13 +123,16 @@ export function buildAnatomyScene(): AnatomyScene {
   root.name = 'anatomy';
 
   // Lights: a soft sky/ground fill and one key light from the front-left-above, like a studio setup.
-  root.add(new THREE.HemisphereLight(0xdfe9ff, 0x2a1d1d, 0.85));
+  root.add(new THREE.HemisphereLight(0xdfe9ff, 0x7a5a58, 1.1));
   const key = new THREE.DirectionalLight(0xffffff, 1.9);
   key.position.set(120, 180, 220);
   root.add(key);
   const rim = new THREE.DirectionalLight(0x9fc4ff, 0.7);
   rim.position.set(-160, 60, -200);
   root.add(rim);
+  const fill = new THREE.DirectionalLight(0xffd9c8, 0.55);
+  fill.position.set(80, -220, 120);
+  root.add(fill);
 
   const beating = new THREE.Group();
   beating.name = 'beating';

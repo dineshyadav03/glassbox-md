@@ -56,9 +56,33 @@ pipeline: no case data goes in, nothing comes out, and no report links to it.
 - **The build-status line** on the start screen, and the disabled buttons, so a half-built app does not
   look finished.
 
+## Phase 2: the 3D anatomy
+
+- **The shapes are stylised, not anatomical measurements.** The heart is a tilted, tapered ellipsoid (apex left,
+  forward and down, a fuller right-ventricle border, a flatter base). Control points for each artery are
+  hand-placed and then snapped onto that surface, so only their rough course matters.
+- **Lengths come from the config, not from the drawing.** Each coronary course is smoothed, snapped to the
+  surface, then cut (or, if short, continued straight on) to exactly the configured length. A test requires the
+  hand-drawn course to be within a modest factor of that length, so a large cut or extension would fail.
+- **The access route is built outward from the aortic root**, so its end at the root is exact, and the far end at
+  the wrist is the part that is cut or extended. The boundaries between the six segments therefore fall at the
+  configured lengths from the wrist, which only approximates where the real joints would be.
+- **True diameters** are drawn: the lesion narrows the LAD to about 0.3 mm, and the radial artery is 2.6 mm. In
+  the whole-route view the arm artery is a thin line for that reason.
+- **The beat** shrinks the heart and the coronaries together by 7% (systole 38% of the cycle, at the base heart
+  rate). The aorta and route do not move, so the coronary openings shift by up to about 3 mm against the aortic
+  root during a beat, which the root's width hides. With `prefers-reduced-motion` the heart does not beat.
+- **Labels** are HTML over the canvas, dimmed when the point is behind the heart. Heart labels appear only when
+  zoomed in, route labels at any zoom, because at whole-route zoom the heart labels overlap. Tooltip lengths are
+  read from the config.
+- **"Enter the cath lab"** opens this anatomy preview and is labelled as one. The start screen's build-status line
+  says what exists and what does not, and the demo button stays disabled.
+- **Not verified here:** WebGL rendering is checked by eye in a browser (desktop and a 375 px phone width), not by
+  automated tests; the WebGL-unavailable message has not been exercised on a real browser without WebGL.
+
 ## Not done yet
 
-Everything visual and interactive: the heart and vessel meshes, both views, the C-arm, devices on screen,
-the HUD, mentor panel and monitor, sound, the demo autopilot, and the "no console errors" run. The
-specification's "demo ends with an Excellent debrief" is therefore only tested here at the logic level
-(`tests/scenario.test.ts`), by chaining the real modules for a good case and for the bad case.
+Devices on screen, the procedure controls, the X-ray view and C-arm, the HUD, mentor panel and monitor,
+sound, and the demo autopilot. The specification's "demo ends with an Excellent debrief" is therefore only
+tested at the logic level (`tests/scenario.test.ts`), by chaining the real modules for a good case and for the
+bad case.

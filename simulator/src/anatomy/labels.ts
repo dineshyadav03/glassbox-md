@@ -14,6 +14,8 @@ export interface LabelAnchor {
   readonly detail: string;
   readonly position: Vec3;
   readonly beats: boolean;
+  /** 'heart' labels only show when zoomed in close; 'body' labels (the route, the aorta) show at any zoom. */
+  readonly scope: 'heart' | 'body';
   /** The target lesion's label is drawn more prominently. */
   readonly emphasis?: boolean;
 }
@@ -33,6 +35,7 @@ function vesselLabel(id: VesselId, at: number, detail: string): LabelAnchor {
     detail: `${spec.label}. ${mm(spec.length)} long in this model, ${spec.diameterProximal} mm wide at the start and ${spec.diameterDistal} mm at the end. ${detail}`,
     position: outward(vesselPosition(id, at), 7),
     beats: true,
+    scope: 'heart',
   };
 }
 
@@ -44,6 +47,7 @@ function routeLabel(id: (typeof ROUTE_SEGMENTS)[number]['id'], s: number, side: 
     detail: `${mm(seg.length)} of the ${mm(ROUTE_SEGMENTS.reduce((sum, x) => sum + x.length, 0))} route from the wrist to the aortic root.`,
     position: add(routePosition(s), side),
     beats: false,
+    scope: 'body',
   };
 }
 
@@ -64,14 +68,16 @@ export function labelAnchors(): LabelAnchor[] {
       detail: `The blockage to treat: ${mm(LESION.length)} long in the mid-LAD, narrowing the vessel by ${Math.round(LESION.diameterStenosis * 100)}% of its diameter. It lies between the two diagonal branches.`,
       position: outward(lesionPoint, 14),
       beats: true,
+      scope: 'heart',
       emphasis: true,
     },
     {
       id: 'aorta',
       text: 'Aorta',
       detail: 'The aortic arch and ascending aorta. The guide catheter reaches the aortic root from the brachiocephalic trunk.',
-      position: add(aorta.positionAt(aorta.length * 0.42), [24, 6, -4]),
+      position: add(aorta.positionAt(aorta.length * 0.42), [34, -6, -4]),
       beats: false,
+      scope: 'body',
     },
     {
       id: 'aortic-root',
@@ -79,12 +85,13 @@ export function labelAnchors(): LabelAnchor[] {
       detail: 'Where the guide catheter ends its journey, and where both coronary arteries arise.',
       position: add(AORTIC_ROOT, [-26, -12, 6]),
       beats: false,
+      scope: 'heart',
     },
     routeLabel('radial', ELBOW_S * 0.45, [-22, 0, 8]),
     routeLabel('brachial', ELBOW_S + 120, [-24, 0, 6]),
-    routeLabel('axillary', ELBOW_S + 270 + 50, [-14, 14, 8]),
-    routeLabel('subclavian', ELBOW_S + 270 + 100 + 30, [0, 16, 6]),
-    routeLabel('brachiocephalic', AORTA_ENTRY_S - 20, [-10, 14, 8]),
+    routeLabel('axillary', ELBOW_S + 270 + 50, [-55, -10, 8]),
+    routeLabel('subclavian', ELBOW_S + 270 + 100 + 30, [-30, 30, 6]),
+    routeLabel('brachiocephalic', AORTA_ENTRY_S - 20, [22, 80, 8]),
   ];
   return labels;
 }

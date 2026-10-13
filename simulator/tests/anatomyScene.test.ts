@@ -151,6 +151,11 @@ describe('labels', () => {
     expect(labels.find((l) => l.id === 'lesion')!.detail).toContain('90%');
   });
 
+  it('shows coronary labels only when zoomed in, and route labels at any zoom', () => {
+    for (const l of labels.filter((x) => x.id.startsWith('vessel-') || x.id === 'lesion' || x.id === 'aortic-root')) expect(l.scope).toBe('heart');
+    for (const l of labels.filter((x) => x.id.startsWith('route-') || x.id === 'aorta')) expect(l.scope).toBe('body');
+  });
+
   it('marks the lesion as the emphasised label and puts the coronary labels in the beating group', () => {
     expect(labels.filter((l) => l.emphasis).map((l) => l.id)).toEqual(['lesion']);
     for (const l of labels.filter((x) => x.id.startsWith('vessel-') || x.id === 'lesion')) expect(l.beats).toBe(true);

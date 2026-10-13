@@ -35,6 +35,32 @@
       }
       button.secondary { background: transparent; color: var(--accent); }
       button:disabled { opacity: 0.45; cursor: not-allowed; }
+      .preview { display: flex; flex-direction: column; height: 100vh; height: 100dvh; padding: 10px 14px 12px; gap: 8px; }
+      .preview-bar { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+      .preview-bar h1 { font-size: 1.15rem; margin: 0; }
+      .preview-disclaimer { margin: 2px 0 0; color: var(--warn); font-size: 0.82rem; }
+      .preview-note { margin: 0; color: var(--muted); font-size: 0.85rem; max-width: 980px; }
+      .stage { position: relative; flex: 1 1 auto; min-height: 240px; border: 1px solid #243040; border-radius: 6px; overflow: hidden; background: #0b0f14; }
+      .stage .status { padding: 16px; }
+      .preview-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 18px; }
+      .preview-toolbar { display: flex; flex-wrap: wrap; gap: 8px; }
+      .preview-toolbar button, .preview-bar button { padding: 6px 12px; font-size: 0.9rem; }
+      button[aria-pressed='true'] { background: var(--accent); color: #05110f; }
+      .preview-info { flex: 1 1 280px; margin: 0; min-height: 2.6em; color: var(--ink); font-size: 0.9rem; }
+      .preview-keys { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 0; font-size: 0.8rem; }
+      .preview-keys dt { display: inline; font-family: ui-monospace, Consolas, monospace; color: var(--accent); }
+      .preview-keys dd { display: inline; margin: 0 0 0 4px; color: var(--muted); }
+      .preview-keys dt, .preview-keys dd { white-space: nowrap; }
+      .label-layer { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+      .anatomy-label {
+        position: absolute; left: 0; top: 0; display: none; padding: 1px 7px; border-radius: 10px;
+        background: rgba(13, 17, 23, 0.82); border: 1px solid #3a4a5c; color: var(--ink);
+        font-size: 12px; line-height: 1.5; white-space: nowrap; pointer-events: auto; cursor: default;
+        will-change: transform;
+      }
+      .anatomy-label.emphasis { border-color: var(--warn); color: #ffe7b0; font-weight: 600; }
+      .anatomy-label.behind { opacity: 0.3; }
+      .anatomy-label:hover { opacity: 1; border-color: var(--accent); }
       @media (max-width: 480px) {
         .controls { grid-template-columns: 1fr; }
         .controls dd { margin-bottom: 8px; }

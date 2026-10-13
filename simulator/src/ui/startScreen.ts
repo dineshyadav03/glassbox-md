@@ -12,17 +12,20 @@ function el<K extends keyof HTMLElementTagNameMap>(
   return node;
 }
 
-/** Render the start screen into `root`. Text is set with textContent only, never innerHTML. */
-export function renderStartScreen(root: HTMLElement): void {
+/**
+ * Render the start screen into `root`. Text is set with textContent only, never innerHTML.
+ * `onEnter` opens the 3D anatomy preview (the only part of the lab that exists so far).
+ */
+export function renderStartScreen(root: HTMLElement, onEnter: () => void): void {
   const disclaimer = el('p', { className: 'disclaimer', text: DISCLAIMER });
   disclaimer.setAttribute('role', 'note');
 
-  const enter = el('button', { text: 'Enter the cath lab' });
+  const enter = el('button', { text: 'Enter the cath lab (anatomy preview)' });
+  enter.title = 'Opens the 3D anatomy. The procedure itself is not built yet.';
+  enter.addEventListener('click', onEnter);
   const demo = el('button', { className: 'secondary', text: 'Watch a demo first' });
-  for (const button of [enter, demo]) {
-    button.disabled = true;
-    button.title = 'Not built yet';
-  }
+  demo.disabled = true;
+  demo.title = 'Not built yet';
 
   const controls = el(
     'dl',
