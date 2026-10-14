@@ -10,4 +10,4 @@ export const DISCLAIMER =
   'Educational only. This is not clinical training, not a medical device and not medical advice. The anatomy is ' +
   'simplified, procedural 3D shapes and every number is invented. It is not connected to the diagnostic pipeline or to any case.';
 
-export const BUILD_STATUS = 'Under construction: this is the empty shell (milestone M0). The operating room is built in the next milestones.';
+export const BUILD_STATUS = 'Under construction (milestone M1): the microscope view of the field is here; the tools, stages and vitals arrive in the next milestones.';

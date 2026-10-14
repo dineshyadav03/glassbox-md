@@ -59,3 +59,14 @@ def test_the_start_page_keeps_the_educational_disclaimer_in_its_script():
     scripts = [u for u in _asset_urls(client.get("/neurolab/").text) if u.endswith(".js")]
     text = " ".join(client.get(u).text for u in scripts).lower()
     assert "not medical advice" in text and "not a medical device" in text
+
+
+def test_the_lab_chunk_that_loads_when_someone_enters_is_served_too():
+    client = _client()
+    entry = next(u for u in _asset_urls(client.get("/neurolab/").text) if u.endswith(".js"))
+    chunks = set(re.findall(r"labScreen-[\w-]+\.(?:js|css)", client.get(entry).text))
+    assert chunks, "the start page's script does not reference the lab chunk"
+    for name in chunks:
+        response = client.get(f"/neurolab/assets/{name}")
+        assert response.status_code == 200, name
+        assert len(response.content) > 1000, name

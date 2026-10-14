@@ -16,11 +16,15 @@ const STYLE = `
 .start .tagline { margin: 0; color: #b8bdd6; }
 .start .notice { margin: 10px 0 0; padding: 12px 14px; border-radius: 10px; background: #1b1626; border: 1px solid #5b4a86; }
 .start .notice strong { display: block; color: #e7c46a; margin-bottom: 4px; }
+.start button.primary { justify-self: start; font: inherit; font-weight: 600; cursor: pointer; padding: 10px 20px; border-radius: 10px; border: 1px solid #67b7a6; background: #14383a; color: #e9fffa; }
+.start button.primary:hover { background: #1b4a4c; }
 .start .foot { margin: 0; color: #8b90ab; font-size: 14px; }
 `;
 
 /** Render the start screen into `root`. Text is set with textContent only, never innerHTML. */
-export function renderStartScreen(root: HTMLElement): void {
+export function renderStartScreen(root: HTMLElement, onEnter: () => void): void {
+  const enter = el('button', 'Enter the operating room', 'primary');
+  enter.addEventListener('click', onEnter);
   const style = el('style');
   style.textContent = STYLE;
   const notice = el('p', undefined, 'notice');
@@ -29,6 +33,6 @@ export function renderStartScreen(root: HTMLElement): void {
   const heading = el('h1', HEADLINE);
   heading.append(el('span', SUBTITLE));
   const main = el('main', undefined, 'start');
-  main.append(el('p', EYEBROW, 'eyebrow'), heading, el('p', TAGLINE, 'tagline'), notice, el('p', BUILD_STATUS, 'foot'));
+  main.append(el('p', EYEBROW, 'eyebrow'), heading, el('p', TAGLINE, 'tagline'), enter, notice, el('p', BUILD_STATUS, 'foot'));
   root.replaceChildren(style, main);
 }
