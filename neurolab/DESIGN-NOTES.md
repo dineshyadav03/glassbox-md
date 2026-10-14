@@ -41,7 +41,27 @@ What the neck is, for pointing: the half of the sac nearest the carotid, so it c
 sees. The aneurysm now points mostly outward (lateral) and down, with only a little backward, for the same reason.
 
 What a tool does not do yet: bleeding has no effect on vitals (M4); the clip is recorded but not evaluated (M5); the
-Doppler gives a text reading, not a tone (M5); stages and the mentor are not there (M3).
+Doppler gives a text reading, not a tone (M5).
+
+## The six steps and the mentor (M3)
+
+Stages are pure functions of the field state (`procedure/stages.ts`), so a scripted learner can play them in a test
+(`tests/stages.test.ts` plays all six with a clean record).
+
+- A stage is complete when all its sub-tasks are. The current stage is the first that is not; later ones are locked.
+  Work done early is remembered and ticks when its stage unlocks, and the mentor announces each step it runs through.
+- Sub-tasks read what the state remembers, not what is true right now: the most the fissure was opened, what was cut,
+  what was identified, the checks made after clipping. So releasing the spatula does not un-tick step 1. The one
+  exception is the clip: take it off to reposition it and step 5 un-ticks until it is on again.
+- "Identify" is a teaching device I added: the guide lists steps such as "identify M1", and a checklist needs something
+  the learner does. They point at a structure and press `I`. Any artery, nerve or the aneurysm can be identified;
+  pointing at the wrong one just tells them what it is.
+- The step-6 checks (Doppler silent in the sac, Doppler flowing in the PCom, ICG looked at) only count when a clip is on
+  and the temporary clip is off, because only then do they mean anything.
+- The mentor's notes are pure too (`procedure/mentor.ts`): a step finished, a refusal explained, an injury or rupture
+  with how to think about it, and the strain, temporary-clip and retraction clocks crossing their lines once each. The
+  advice for a rupture (suction, temporary clip, then clip) is the plan from the brief; the bleeding it refers to arrives
+  in M4.
 
 ## How M1 looks the way it does
 
@@ -67,6 +87,6 @@ Doppler gives a text reading, not a tone (M5); stages and the mentor are not the
 
 ## Verification
 
-Geometry and rules are tested in node (113 tests): aneurysm size and its config edit, branch connections, label
+Geometry and rules are tested in node (134 tests): aneurysm size and its config edit, branch connections, label
 placement, fold height bounds, fissure opening, membrane cutting, pulse swelling, camera maths. What the picture looks
 like is checked by eye in the browser; I say so plainly rather than claim a test proves it looks right.

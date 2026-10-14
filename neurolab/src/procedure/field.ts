@@ -8,6 +8,7 @@ import { RULES } from '../config/rules';
 import type { NerveId, VesselId } from '../anatomy/vessels';
 import type { ToolId } from '../tools/tools';
 import { TOOL_BY_ID } from '../tools/tools';
+import { describeTarget } from '../anatomy/targets';
 
 export type Target =
   | { readonly kind: 'none' }
@@ -58,6 +59,12 @@ export interface FieldState {
   readonly cut: readonly string[];
   /** How far the fissure is held open, 0 to 1. */
   readonly retraction: number;
+  /** The most it has been held open so far, 0 to 1 (so releasing the spatula does not undo the step). */
+  readonly peakRetraction: number;
+  /** Structures the learner has pointed at and identified: vessel ids, nerve ids, and 'aneurysm'. */
+  readonly identified: readonly string[];
+  /** Checks made after clipping: 'pcom-flow', 'sac-silent', 'icg-checked'. */
+  readonly checks: readonly string[];
   /** Seconds the lobes have been held apart. */
   readonly retractionSeconds: number;
   /** How free the aneurysm neck is of the carotid, 0 to 1. */
@@ -97,6 +104,7 @@ export type EventCode =
   | 'clip-refused'
   | 'clip-off'
   | 'view'
+  | 'identified'
   | 'endoscope'
   | 'doppler'
   | 'temp-on'
@@ -118,6 +126,7 @@ export interface Result {
 export type Action =
   | { readonly type: 'click'; readonly tool: ToolId; readonly target: Target }
   | { readonly type: 'hold'; readonly tool: ToolId; readonly target: Target; readonly dt: number }
+  | { readonly type: 'identify'; readonly target: Target }
   | { readonly type: 'setClip'; readonly variant?: ClipVariant; readonly angleDeg?: number; readonly depth?: number }
   | { readonly type: 'removeClip' };
 
@@ -126,6 +135,9 @@ export function initialField(): FieldState {
     time: 0,
     cut: [],
     retraction: 0,
+    peakRetraction: 0,
+    identified: [],
+    checks: [],
     retractionSeconds: 0,
     neckFreed: 0,
     domeStress: 0,
@@ -145,6 +157,7 @@ export function initialField(): FieldState {
 const event = (code: EventCode, tone: FieldEvent['tone'], text: string): FieldEvent => ({ code, tone, text });
 const done = (state: FieldState, ...events: FieldEvent[]): Result => ({ state, events });
 const clamp = (v: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, v));
+const addOnce = (list: readonly string[], id: string): readonly string[] => (list.includes(id) ? list : [...list, id]);
 
 // --- reading the state -------------------------------------------------------------------------------------
 
@@ -250,7 +263,7 @@ function spatula(state: FieldState): Result {
   const allowed = allowedRetraction(state);
   if (state.retraction > 0) return done({ ...state, retraction: 0 }, event('released', 'info', 'The lobes are released.'));
   if (allowed <= 0) return done(state, event('bound', 'warn', 'The fissure is bound by arachnoid. Cut the outer membrane first.'));
-  return done({ ...state, retraction: allowed }, event('retracted', 'good', allowed >= 1 ? 'The fissure is open and held.' : 'Held as far as the cut membrane allows. Cut more to open it further.'));
+  return done({ ...state, retraction: allowed, peakRetraction: Math.max(state.peakRetraction, allowed) }, event('retracted', 'good', allowed >= 1 ? 'The fissure is open and held.' : 'Held as far as the cut membrane allows. Cut more to open it further.'));
 }
 
 function dissector(state: FieldState, target: Target): Result {
@@ -308,7 +321,11 @@ function click(state: FieldState, tool: ToolId, target: Target): Result {
       return tempClip(state, target);
     case 'icg': {
       const view = state.view === 'icg' ? 'white' : 'icg';
-      return done({ ...state, view }, event('view', 'info', view === 'icg' ? 'Fluorescence view on.' : 'White-light view.'));
+      const checked = view === 'icg' && state.clip !== null && !state.tempClip.on;
+      return done(
+        { ...state, view, checks: checked ? addOnce(state.checks, 'icg-checked') : state.checks },
+        event('view', 'info', view === 'icg' ? 'Fluorescence view on.' : 'White-light view.'),
+      );
     }
     case 'endoscope': {
       const on = !state.endoscope;
@@ -316,7 +333,13 @@ function click(state: FieldState, tool: ToolId, target: Target): Result {
     }
     case 'doppler': {
       const reading = dopplerReading(state, target);
-      return done(state, event('doppler', reading.flow ? 'good' : 'info', reading.text));
+      // After clipping: flow in the posterior communicating artery and silence in the sac are the checks that matter.
+      let checks = state.checks;
+      if (state.clip && !state.tempClip.on) {
+        if (target.kind === 'vessel' && target.id === 'pcom' && reading.flow) checks = addOnce(checks, 'pcom-flow');
+        if (target.kind === 'aneurysm' && !reading.flow) checks = addOnce(checks, 'sac-silent');
+      }
+      return done({ ...state, checks }, event('doppler', reading.flow ? 'good' : 'info', reading.text));
     }
     default:
       return done(state);
@@ -368,6 +391,19 @@ function hold(state: FieldState, tool: ToolId, target: Target, dt: number): Resu
   return done(state);
 }
 
+/** The id a target is identified by, or null if it is not something to identify (membrane, lobes, leaks, empty space). */
+export function identifiableId(target: Target): string | null {
+  if (target.kind === 'vessel' || target.kind === 'nerve') return target.id;
+  if (target.kind === 'aneurysm') return 'aneurysm';
+  return null;
+}
+
+function identify(state: FieldState, target: Target): Result {
+  const id = identifiableId(target);
+  if (id === null) return done(state, event('noop', 'info', 'Point at an artery, a nerve or the aneurysm, then identify it.'));
+  return done({ ...state, identified: addOnce(state.identified, id) }, event('identified', 'info', `That is: ${describeTarget(target)}.`));
+}
+
 export function setClip(state: FieldState, patch: { variant?: ClipVariant; angleDeg?: number; depth?: number }): FieldState {
   const limit = RULES.clipAngleLimitDeg;
   return {
@@ -387,6 +423,8 @@ export function act(state: FieldState, action: Action): Result {
       return click(state, action.tool, action.target);
     case 'hold':
       return hold(state, action.tool, action.target, action.dt);
+    case 'identify':
+      return identify(state, action.target);
     case 'setClip':
       return done(setClip(state, action));
     case 'removeClip':
