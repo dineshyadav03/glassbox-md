@@ -6,10 +6,21 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { ANATOMY } from '../config/anatomy';
+import { classifyHit } from '../anatomy/targets';
+import { NO_TARGET, type Target } from '../procedure/field';
 import type { BrainScene } from './brainScene';
 import { clampSwing, easeInOut, fovFor } from './cameraMath';
 
 export interface Microscope {
+  /** What is under the pointer right now (recomputed every frame while the pointer is over the view). */
+  pointerTarget(): Target;
+  /** Called when the primary button goes down or up over the view. */
+  onToolDown: ((target: Target) => void) | null;
+  onToolUp: (() => void) | null;
+  /** The cursor over the view, a CSS `cursor` value. */
+  setCursor(cursor: string): void;
+  /** Show or hide the small endoscope view, drawn in a corner of the canvas. */
+  setEndoscope(on: boolean): void;
   setLabelsVisible(visible: boolean): void;
   readonly labelsVisible: boolean;
   /** Fly back to the starting view. */
@@ -69,7 +80,66 @@ export function createMicroscope(container: HTMLElement, scene: BrainScene): Mic
   controls.maxAzimuthAngle = swing;
   controls.minPolarAngle = Math.PI / 2 - swing;
   controls.maxPolarAngle = Math.PI / 2 + swing;
+  // The primary button belongs to the tool. Right-drag looks around, middle-drag moves, the arrow keys move too.
+  controls.mouseButtons = { LEFT: null, MIDDLE: THREE.MOUSE.PAN, RIGHT: THREE.MOUSE.ROTATE };
+  controls.listenToKeyEvents(window);
+  controls.keyPanSpeed = 14;
   controls.update();
+  renderer.domElement.addEventListener('contextmenu', (event) => event.preventDefault());
+
+  // --- pointing ----------------------------------------------------------------------------------------------
+  const raycaster = new THREE.Raycaster();
+  const pointer = new THREE.Vector2();
+  let pointerInside = false;
+  let current: Target = NO_TARGET;
+  const aim = (): Target => {
+    if (!pointerInside) return NO_TARGET;
+    raycaster.setFromCamera(pointer, camera);
+    const hits = raycaster.intersectObjects(
+      scene.pickables().filter((mesh) => mesh.visible),
+      false,
+    );
+    const first = hits[0];
+    return first ? classifyHit(first.object.name, [first.point.x, first.point.y, first.point.z]) : NO_TARGET;
+  };
+  const onPointerMove = (event: PointerEvent): void => {
+    const rect = renderer.domElement.getBoundingClientRect();
+    pointer.set(((event.clientX - rect.left) / rect.width) * 2 - 1, -((event.clientY - rect.top) / rect.height) * 2 + 1);
+    pointerInside = true;
+  };
+  const onPointerLeave = (): void => {
+    pointerInside = false;
+  };
+  const onPointerDown = (event: PointerEvent): void => {
+    if (event.button !== 0) return;
+    onPointerMove(event);
+    current = aim();
+    api.onToolDown?.(current);
+  };
+  const onPointerUp = (event: PointerEvent): void => {
+    if (event.button === 0) api.onToolUp?.();
+  };
+  renderer.domElement.addEventListener('pointermove', onPointerMove);
+  renderer.domElement.addEventListener('pointerleave', onPointerLeave);
+  renderer.domElement.addEventListener('pointerdown', onPointerDown);
+  window.addEventListener('pointerup', onPointerUp);
+
+  // --- the endoscope inset ----------------------------------------------------------------------------------------
+  let endoscopeOn = false;
+  const insetFrame = document.createElement('div');
+  insetFrame.className = 'endoscope-frame';
+  insetFrame.hidden = true;
+  const insetLabel = document.createElement('span');
+  insetLabel.textContent = 'Endoscope';
+  insetFrame.append(insetLabel);
+  container.append(insetFrame);
+  const endoscope = new THREE.PerspectiveCamera(55, 1, 0.5, 400);
+  endoscope.position.set(...scene.endoscopeView.position);
+  endoscope.lookAt(...scene.endoscopeView.target);
+  const insetRect = (): { x: number; y: number; size: number } => {
+    const size = Math.round(Math.min(width * 0.34, height * 0.34, 260));
+    return { x: width - size - 14, y: 14, size };
+  };
 
   // --- labels -------------------------------------------------------------------------------------------
   const layer = document.createElement('div');
@@ -114,6 +184,8 @@ export function createMicroscope(container: HTMLElement, scene: BrainScene): Mic
     camera.aspect = width / height;
     camera.fov = fovFor(cam.fovDeg, camera.aspect);
     camera.updateProjectionMatrix();
+    const rect = insetRect();
+    insetFrame.style.cssText = `left:${rect.x}px;bottom:${rect.y}px;width:${rect.size}px;height:${rect.size}px`;
   };
   const observer = new ResizeObserver(resize);
   observer.observe(container);
@@ -134,6 +206,16 @@ export function createMicroscope(container: HTMLElement, scene: BrainScene): Mic
   let last = began;
   let frame = 0;
   const api: Microscope = {
+    onToolDown: null,
+    onToolUp: null,
+    pointerTarget: () => current,
+    setCursor(cursor: string): void {
+      renderer.domElement.style.cursor = cursor;
+    },
+    setEndoscope(on: boolean): void {
+      endoscopeOn = on;
+      insetFrame.hidden = !on;
+    },
     onFrame: null,
     beatsPerMinute: () => 72,
     setLabelsVisible(visible: boolean): void {
@@ -150,6 +232,11 @@ export function createMicroscope(container: HTMLElement, scene: BrainScene): Mic
       cancelAnimationFrame(frame);
       observer.disconnect();
       renderer.domElement.removeEventListener('pointerdown', cancelMove);
+      renderer.domElement.removeEventListener('pointermove', onPointerMove);
+      renderer.domElement.removeEventListener('pointerleave', onPointerLeave);
+      renderer.domElement.removeEventListener('pointerdown', onPointerDown);
+      window.removeEventListener('pointerup', onPointerUp);
+      insetFrame.remove();
       controls.dispose();
       scene.dispose();
       renderer.dispose();
@@ -170,7 +257,19 @@ export function createMicroscope(container: HTMLElement, scene: BrainScene): Mic
     }
     controls.update();
     scene.setPulse(reducedMotion ? 0 : ((now - began) / 1000) * (api.beatsPerMinute() / 60));
+    current = aim();
+    renderer.setScissorTest(false);
+    renderer.setViewport(0, 0, width, height);
     renderer.render(three, camera);
+    if (endoscopeOn) {
+      const rect = insetRect();
+      renderer.setScissorTest(true);
+      renderer.setViewport(rect.x, rect.y, rect.size, rect.size);
+      renderer.setScissor(rect.x, rect.y, rect.size, rect.size);
+      renderer.clearDepth();
+      renderer.render(three, endoscope);
+      renderer.setScissorTest(false);
+    }
     updateLabels(width, height);
   };
   frame = requestAnimationFrame(loop);

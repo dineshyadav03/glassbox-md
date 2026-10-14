@@ -10,7 +10,7 @@ All in `src/config/anatomy.ts`, in millimetres. Change a value there and the sce
 |---|---|---|
 | Aneurysm dome | 6.6 mm | The brief's size; one number to edit |
 | Aneurysm neck | 3.2 mm, 1.0 mm stalk | Chosen so the neck is clearly narrower than the dome |
-| Aneurysm direction | posterolateral and down | `(0.6, -0.5, -0.6)` |
+| Aneurysm direction | posterolateral and down | `(0.85, -0.45, -0.25)` |
 | Junction | 8.5 mm back from the ICA bifurcation | Posterior communicating artery leaves here |
 | ICA radius | 2.4 to 2.1 mm | Simplified |
 | M1 / A1 / M2 | 1.6 to 1.25, 1.3 to 1.1, about 1.0 mm | Simplified |
@@ -18,6 +18,30 @@ All in `src/config/anatomy.ts`, in millimetres. Change a value there and the sce
 | Lobes | ellipsoids with sine-wave folds, 2.6 mm deep | Not an atlas |
 | Fissure opening | each lobe moves 12 mm | Closed gap is about 12 mm; open is about 36 mm |
 | Pulse | arteries swell 4% of their radius | Visual only |
+
+## Invented numbers (M2: the tool rules)
+
+All in `src/config/rules.ts`. They are teaching choices, not clinical standards.
+
+| Rule | Value |
+|---|---|
+| Membrane order | outer first: lateral, mid, deep, then the carotid cistern |
+| Fissure opening allowed | one third per fissure segment cut (the carotid cistern does not add to it) |
+| Suction rate | 4 pool units per second |
+| Bipolar to seal a small ooze | 1 s; a brisk leak from a cut artery needs 3 s |
+| Bipolar on a vessel or nerve before it is injured | 2.5 s |
+| Dissector step on the neck | 25% per stroke; fissure at least 60% open and the carotid membrane cut first |
+| Neck free enough to clip | 75% |
+| Dome strain | 0.3 per rough stroke; 0.1 per second of suction; 0.5 per second of bipolar; rupture at 1 |
+| Temporary clip: warn, long | 180 s, 300 s (the debrief will use these) |
+| Retraction warning | 600 s |
+| Clip angle, depth | up to 90 degrees each way in 10 degree steps; depth 0 to 1 in 0.1 steps |
+
+What the neck is, for pointing: the half of the sac nearest the carotid, so it can be reached from the side the camera
+sees. The aneurysm now points mostly outward (lateral) and down, with only a little backward, for the same reason.
+
+What a tool does not do yet: bleeding has no effect on vitals (M4); the clip is recorded but not evaluated (M5); the
+Doppler gives a text reading, not a tone (M5); stages and the mentor are not there (M3).
 
 ## How M1 looks the way it does
 
@@ -43,6 +67,6 @@ All in `src/config/anatomy.ts`, in millimetres. Change a value there and the sce
 
 ## Verification
 
-Geometry and rules are tested in node (58 tests): aneurysm size and its config edit, branch connections, label
+Geometry and rules are tested in node (113 tests): aneurysm size and its config edit, branch connections, label
 placement, fold height bounds, fissure opening, membrane cutting, pulse swelling, camera maths. What the picture looks
 like is checked by eye in the browser; I say so plainly rather than claim a test proves it looks right.

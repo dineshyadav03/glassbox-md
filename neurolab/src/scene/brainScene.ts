@@ -11,7 +11,10 @@ import { aneurysmGeometry } from '../anatomy/aneurysm';
 import { labelAnchors, type LabelAnchor } from '../anatomy/labels';
 import { buildLobe, lobeSurfaceY } from '../anatomy/lobe';
 import { TubeTemplate, type Colour } from '../anatomy/tubeGeometry';
+import { oozeAnchor } from '../anatomy/targets';
 import { buildNerves, buildVessels, type NerveId, type Tube, type VesselId } from '../anatomy/vessels';
+import { anyPerpendicular, cross, rotateAbout, type Vec3 } from '../anatomy/vec3';
+import type { ClipSetup } from '../procedure/field';
 
 type Config = typeof ANATOMY;
 
@@ -43,6 +46,16 @@ export interface BrainScene {
   isArachnoidCut(id: string): boolean;
   /** Swell the arteries for this point in the heart cycle, 0 to 1. */
   setPulse(phase: number): void;
+  /** Meshes a tool can point at; the caller skips any that are not visible. */
+  pickables(): THREE.Mesh[];
+  /** White light, or the fluorescence view where only vessels with blood flowing in them glow. */
+  setFieldView(view: 'white' | 'icg', flowing: ReadonlySet<string>): void;
+  setTempClip(on: boolean): void;
+  setAppliedClip(clip: ClipSetup | null): void;
+  /** Draw the small bleeding points; `on` is a vessel id or 'neck'. */
+  setOozes(oozes: readonly { readonly id: string; readonly on: string }[]): void;
+  /** Where the endoscope sits (behind the aneurysm) and what it looks at (the neck). */
+  readonly endoscopeView: { readonly position: Vec3; readonly target: Vec3 };
   dispose(): void;
 }
 
@@ -141,8 +154,11 @@ export function buildBrainScene(config: Config = ANATOMY, opening = 1): BrainSce
   const nerveTubes = buildNerves(config);
   const live: Live[] = [];
   const vessels = {} as Record<VesselId, THREE.Mesh>;
+  const arteryMaterials: THREE.MeshPhysicalMaterial[] = [];
   for (const id of Object.keys(vesselTubes) as VesselId[]) {
-    const made = tubeMesh(vesselTubes[id], COLOURS.artery, arteryMaterial);
+    const own = arteryMaterial.clone();
+    arteryMaterials.push(own);
+    const made = tubeMesh(vesselTubes[id], COLOURS.artery, own);
     vessels[id] = made.mesh;
     live.push(made);
   }
@@ -178,7 +194,29 @@ export function buildBrainScene(config: Config = ANATOMY, opening = 1): BrainSce
   backdrop.position.set(0, 0, -102);
   backdrop.name = 'backdrop';
 
-  root.add(frontalGroup, temporalGroup, backdrop, ...Object.values(vessels), ...Object.values(nerves), sacLive.mesh, bleb, ...arachnoid.values());
+  // --- instruments and leaks the tools leave behind -------------------------------------------------------
+  const titanium = new THREE.MeshStandardMaterial({ color: 0xd8b04a, metalness: 0.7, roughness: 0.3 });
+  const blood = new THREE.MeshStandardMaterial({ color: 0x6e0a0e, roughness: 0.25, emissive: 0x3a0306 });
+  const ica = vesselTubes.ica;
+  const tempClipMesh = new THREE.Group();
+  tempClipMesh.name = 'temporary-clip';
+  {
+    const at = ica.path.positionAt(ica.path.length * 0.3);
+    const tangent = ica.path.tangentAt(ica.path.length * 0.3);
+    const bar = new THREE.Mesh(new THREE.BoxGeometry(7, 1.4, 2.4), titanium);
+    const bar2 = new THREE.Mesh(new THREE.BoxGeometry(1.4, 2.8, 2.4), titanium);
+    bar2.position.set(3.2, 0, 0);
+    tempClipMesh.add(bar, bar2);
+    tempClipMesh.position.set(...at);
+    tempClipMesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), new THREE.Vector3(...tangent));
+    tempClipMesh.visible = false;
+  }
+  const appliedClip = new THREE.Group();
+  appliedClip.name = 'aneurysm-clip';
+  const ooze = new Map<string, THREE.Mesh>();
+  const oozeGeometry = new THREE.SphereGeometry(1.1, 14, 10);
+
+  root.add(tempClipMesh, appliedClip, frontalGroup, temporalGroup, backdrop, ...Object.values(vessels), ...Object.values(nerves), sacLive.mesh, bleb, ...arachnoid.values());
 
   const fieldBounds = new THREE.Box3();
   for (const mesh of [...Object.values(vessels), ...Object.values(nerves), sacLive.mesh, bleb]) fieldBounds.union(new THREE.Box3().setFromObject(mesh));
@@ -220,11 +258,89 @@ export function buildBrainScene(config: Config = ANATOMY, opening = 1): BrainSce
       const swell = 1 + PULSE_SWELL * pulseWave(phase);
       for (const item of live) item.refill(swell);
     },
+    pickables(): THREE.Mesh[] {
+      const meshes: THREE.Mesh[] = [frontal, temporal, sacLive.mesh, bleb, ...Object.values(vessels), ...Object.values(nerves), ...arachnoid.values(), ...ooze.values()];
+      return meshes;
+    },
+    setFieldView(view: 'white' | 'icg', flowingNow: ReadonlySet<string>): void {
+      const dark = view === 'icg';
+      brainMaterial.color.setScalar(dark ? 0.14 : 1);
+      nerveMaterial.color.setScalar(dark ? 0.14 : 1);
+      membraneMaterial.opacity = dark ? 0.04 : 0.1;
+      const glow = (material: THREE.MeshPhysicalMaterial, on: boolean, rest: number): void => {
+        if (!dark) {
+          material.color.setScalar(1);
+          material.emissive.setHex(rest);
+        } else if (on) {
+          material.color.setScalar(0.25);
+          material.emissive.setHex(0x2dff7a);
+        } else {
+          material.color.setScalar(0.05);
+          material.emissive.setHex(0x000000);
+        }
+      };
+      for (const id of Object.keys(vessels) as VesselId[]) glow(vessels[id].material as THREE.MeshPhysicalMaterial, flowingNow.has(id), 0x3a0a0a);
+      glow(aneurysmMaterial, flowingNow.has('aneurysm'), 0x440c0c);
+    },
+    setTempClip(on: boolean): void {
+      tempClipMesh.visible = on;
+    },
+    setAppliedClip(clip: ClipSetup | null): void {
+      for (const child of [...appliedClip.children]) {
+        appliedClip.remove(child);
+        (child as THREE.Mesh).geometry.dispose();
+      }
+      appliedClip.visible = clip !== null;
+      if (!clip) return;
+      const g = an;
+      const span = 2 * g.neckRadius * (0.7 + 0.8 * clip.depth) + 2;
+      const geometry =
+        clip.variant === 'straight'
+          ? new THREE.BoxGeometry(span, 1.3, 1.3)
+          : new THREE.TorusGeometry(span / 1.6, 0.6, 8, 20, Math.PI * 0.75);
+      const blade = new THREE.Mesh(geometry, titanium);
+      if (clip.variant === 'curved') blade.rotation.z = Math.PI / 2 + Math.PI * 0.125;
+      appliedClip.add(blade);
+      const x = rotateAbout(anyPerpendicular(g.axis), g.axis, (clip.angleDeg * Math.PI) / 180);
+      const y = cross(g.axis, x);
+      appliedClip.matrix.makeBasis(new THREE.Vector3(...x), new THREE.Vector3(...y), new THREE.Vector3(...g.axis));
+      appliedClip.matrix.setPosition(g.neckCentre[0] + g.axis[0] * 0.5, g.neckCentre[1] + g.axis[1] * 0.5, g.neckCentre[2] + g.axis[2] * 0.5);
+      appliedClip.matrixAutoUpdate = false;
+    },
+    setOozes(list: readonly { readonly id: string; readonly on: string }[]): void {
+      const wanted = new Set(list.map((o) => o.id));
+      for (const [id, mesh] of ooze) {
+        if (!wanted.has(id)) {
+          root.remove(mesh);
+          ooze.delete(id);
+        }
+      }
+      for (const item of list) {
+        if (ooze.has(item.id)) continue;
+        const mesh = new THREE.Mesh(oozeGeometry, blood);
+        mesh.name = `ooze:${item.id}`;
+        if (item.on === 'neck') {
+          const anchor = oozeAnchor('neck', config);
+          if (anchor) mesh.position.set(...anchor);
+        } else {
+          const tube = vesselTubes[item.on as VesselId];
+          const mid = tube.path.positionAt(tube.path.length * 0.5);
+          mesh.position.set(mid[0], mid[1], mid[2] + tube.radiusAt(tube.path.length * 0.5) + 0.4);
+        }
+        ooze.set(item.id, mesh);
+        root.add(mesh);
+      }
+    },
+    endoscopeView: {
+      position: [an.domeCentre[0] + an.axis[0] * (an.domeRadius + 13), an.domeCentre[1] + an.axis[1] * (an.domeRadius + 13), an.domeCentre[2] + an.axis[2] * (an.domeRadius + 13)],
+      target: an.neckCentre,
+    },
     dispose(): void {
       root.traverse((object) => {
         if (object instanceof THREE.Mesh) object.geometry.dispose();
       });
-      for (const material of [brainMaterial, arteryMaterial, aneurysmMaterial, nerveMaterial, membraneMaterial, steel, backdropMaterial]) material.dispose();
+      for (const material of [brainMaterial, arteryMaterial, ...arteryMaterials, aneurysmMaterial, nerveMaterial, membraneMaterial, steel, backdropMaterial, titanium, blood]) material.dispose();
+      oozeGeometry.dispose();
     },
   };
   scene.setFissureOpening(opening);

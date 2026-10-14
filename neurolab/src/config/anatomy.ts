@@ -157,7 +157,7 @@ export const ANATOMY = {
     /** Short straight stalk between the vessel wall and the sac, mm. */
     stalkMm: 1.0,
     /** Unit-ish direction the sac points in (normalised by the code). */
-    direction: [0.6, -0.5, -0.6] as Vec3,
+    direction: [0.85, -0.45, -0.25] as Vec3,
     /** How far back along the ICA from its end (the bifurcation) the junction is, mm. */
     junctionBackMm: 8.5,
     bleb: { diameterMm: 1.9, offsetFromAxis: 0.55 },

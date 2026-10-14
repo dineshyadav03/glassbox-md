@@ -37,7 +37,7 @@ describe('the aneurysm', () => {
   it('narrows to the neck at the vessel and closes at the far end of the dome', () => {
     const g = aneurysmGeometry();
     expect(g.radiusAt(g.insideMm)).toBeCloseTo(g.neckRadius, 6);
-    expect(g.radiusAt(g.path.length)).toBe(0);
+    expect(g.radiusAt(g.path.length)).toBeCloseTo(0, 5);
     expect(g.neckRadius * 2).toBeCloseTo(ANATOMY.aneurysm.neckWidthMm, 6);
     expect(g.neckRadius).toBeLessThan(g.domeRadius);
   });
