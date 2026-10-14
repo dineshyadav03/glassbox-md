@@ -9,11 +9,13 @@ A browser-based simulator of percutaneous coronary intervention (PCI): stenting 
 right radial artery, in six scored steps, in 3D and on a simulated X-ray screen, with a narrated demo that plays the
 whole case. Strict TypeScript, Three.js, Vite and Vitest; every rule is a pure function with a unit test.
 
-| The demo playing the case | A balloon across the lesion |
+| The start screen | The demo playing the case |
 |---|---|
-| ![The autopilot demo, narrating, at the start of the case](docs/screenshots/demo-running.jpg) | ![A balloon inflated across the 90% lesion, with the pressure panel](docs/screenshots/balloon-inflated-3d.jpg) |
-| **The X-ray view: the held angiogram** | **The scored debrief** |
-| ![A held angiogram on the simulated fluoroscopy screen](docs/screenshots/xray-angiogram-held.jpg) | ![The debrief: Excellent, 100 out of 100](docs/screenshots/debrief-excellent.jpg) |
+| ![The start screen](docs/screenshots/start-screen.jpg) | ![The autopilot demo, narrating, at the start of the case](docs/screenshots/demo-running.jpg) |
+| **A balloon across the lesion** | **The X-ray view** |
+| ![A balloon inflated across the 90% lesion, with the pressure panel](docs/screenshots/balloon-inflated-3d.jpg) | ![The simulated fluoroscopy screen, stent in place](docs/screenshots/xray-fluoro.jpg) |
+
+![The debrief: Excellent, 100 out of 100](docs/screenshots/debrief-excellent.jpg)
 
 There is no public live link: it has not been deployed (see [Deploying](#deploying)). To run it:
 

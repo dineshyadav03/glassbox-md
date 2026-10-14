@@ -50,12 +50,12 @@ const FOV = 38;
 export function createViewer(container: HTMLElement, anatomy: AnatomyScene, options: ViewerOptions = {}): Viewer | null {
   let renderer: THREE.WebGLRenderer;
   try {
-    renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+    renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
   } catch {
     return null;
   }
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
-  renderer.setClearColor(0x0b0f14, 1);
+  renderer.setClearColor(0x000000, 0); // transparent: the stage's own gradient shows behind the scene
   renderer.domElement.setAttribute('role', 'img');
   renderer.domElement.setAttribute(
     'aria-label',

@@ -222,17 +222,24 @@ export function createXrayDisplay(): XrayDisplay {
     ctx.textAlign = 'right';
     ctx.fillText(`FOV ${Math.round(field)} mm`, SIZE - 16, SIZE - 34);
     ctx.textAlign = 'left';
+    // The status sits at the top centre, inside the circle, clear of the view switch in the screen's corner.
+    ctx.textAlign = 'center';
     if (live) {
+      const word = cine ? 'CINE' : 'FLUORO';
+      const width = ctx.measureText(word).width + 22;
+      const left = SIZE / 2 - width / 2;
       ctx.fillStyle = '#ff5a4a';
       ctx.beginPath();
-      ctx.arc(26, 26, 7, 0, Math.PI * 2);
+      ctx.arc(left + 7, 27, 6, 0, Math.PI * 2);
       ctx.fill();
       ctx.fillStyle = '#ff9d90';
-      ctx.fillText(cine ? 'CINE' : 'FLUORO', 42, 17);
+      ctx.textAlign = 'left';
+      ctx.fillText(word, left + 22, 18);
     } else {
       ctx.fillStyle = '#ffd37a';
-      ctx.fillText(heldKind === 'angiogram' ? 'LAST ANGIOGRAM (held)' : heldKind === 'fluoro' ? 'LAST IMAGE HOLD' : '', 16, 17);
+      ctx.fillText(heldKind === 'angiogram' ? 'LAST ANGIOGRAM (held)' : heldKind === 'fluoro' ? 'LAST IMAGE HOLD' : '', SIZE / 2, 18);
     }
+    ctx.textAlign = 'left';
     if (heldKind === 'none' && !live) {
       ctx.fillStyle = '#9aa7b4';
       ctx.font = '600 18px system-ui, sans-serif';

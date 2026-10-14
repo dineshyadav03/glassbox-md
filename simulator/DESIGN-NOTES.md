@@ -178,3 +178,13 @@ pipeline: no case data goes in, nothing comes out, and no report links to it.
 Nothing from the specification. Listening tests for the sound, and the simplifications listed above, remain. The specification's "demo ends with an Excellent debrief" is therefore only
 tested at the logic level (`tests/scenario.test.ts`), by chaining the real modules for a good case and for the
 bad case.
+
+## UI redesign
+
+The lab screen is one CSS grid with a definite height (`100dvh`, minimum 660 px): a header bar, a three-column body
+(steps, stage, monitor and mentor) and a dock of tools along the bottom. Making the height definite was the fix for
+the stage collapsing at 1100x700: without it the tall left column stretched the grid row and the page grew past the
+window. The stage is a size container, so the optional route pills and the demo hint hide when the stage is narrow
+rather than when the window is. The 3D canvas is transparent over a gradient, with a darker heart and brighter,
+slightly emissive arteries, because the old flat colours let the vessels blend into the muscle. The X-ray status text
+sits inside the circle at the top, out from under the view switch.

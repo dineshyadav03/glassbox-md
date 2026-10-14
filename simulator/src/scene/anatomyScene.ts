@@ -15,9 +15,9 @@ import { TubeTemplate, type Colour } from '../anatomy/tubeGeometry';
 import type { Vec3 } from '../anatomy/vec3';
 import { lesionWeight, lumenDiameterAt, type Treatment } from '../physics/lesion';
 
-const MUSCLE: Colour = [0.55, 0.1, 0.12];
-const FAT: Colour = [0.9, 0.74, 0.42];
-const ARTERY: Colour = [0.82, 0.14, 0.12];
+const MUSCLE: Colour = [0.27, 0.1, 0.12];
+const FAT: Colour = [0.62, 0.5, 0.34];
+const ARTERY: Colour = [1.0, 0.38, 0.26];
 const PLAQUE: Colour = [0.96, 0.86, 0.5];
 
 const mix = (a: Colour, b: Colour, t: number): Colour => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
@@ -157,7 +157,7 @@ export function buildAnatomyScene(): AnatomyScene {
   beating.add(heartMesh);
 
   // Translucent walls, so the wire and catheters inside can be seen through them.
-  const arteryMaterial = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.4, metalness: 0, side: THREE.DoubleSide, transparent: true, opacity: 0.62, depthWrite: false });
+  const arteryMaterial = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.35, metalness: 0, side: THREE.DoubleSide, transparent: true, opacity: 0.78, depthWrite: false, emissive: 0x4a1208 });
   const coronaryTubes = {} as Record<VesselId, TubeMesh>;
   const coronaries = {} as Record<VesselId, THREE.Mesh>;
   for (const id of VESSEL_ORDER) {
@@ -183,7 +183,7 @@ export function buildAnatomyScene(): AnatomyScene {
 
   // The access arteries, wrist to the brachiocephalic trunk (the last stretch of the route lies inside the aorta).
   const accessPath = route.slice(0, AORTA_ENTRY_S);
-  const accessMaterial = new THREE.MeshStandardMaterial({ color: 0xd9776b, roughness: 0.45, side: THREE.DoubleSide, transparent: true, opacity: 0.45, depthWrite: false });
+  const accessMaterial = new THREE.MeshStandardMaterial({ color: 0xf08a78, roughness: 0.4, side: THREE.DoubleSide, transparent: true, opacity: 0.55, depthWrite: false, emissive: 0x3a0f08 });
   const accessTube = new TubeMesh(accessPath, (s) => routeDiameterAt(s) / 2, () => [1, 1, 1], accessMaterial, 4, 16, 'access-route');
   root.add(accessTube.mesh);
 

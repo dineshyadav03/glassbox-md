@@ -36,3 +36,24 @@ export function cursorSvg(tool: ToolId): string {
 export function cursorFor(tool: ToolId): string {
   return `url("data:image/svg+xml,${encodeURIComponent(cursorSvg(tool))}") 12 12, pointer`;
 }
+
+/** Icons for the two buttons that are not tools. */
+const EXTRA_ICONS = {
+  heparin:
+    '<path d="M4 20 L11 13" stroke="#ccd6df" stroke-width="2" stroke-linecap="round"/>' +
+    '<rect x="9" y="5" width="11" height="6" rx="1.2" transform="rotate(45 14.5 8)" fill="none" stroke="#ccd6df" stroke-width="1.6"/>' +
+    '<path d="M15.5 4.5 L19.5 8.5 M17.5 2.5 L21.5 6.5" stroke="#ccd6df" stroke-width="1.8" stroke-linecap="round"/>',
+  carm:
+    '<path d="M5 20 A9 9 0 1 1 19 20" fill="none" stroke="#ccd6df" stroke-width="2" stroke-linecap="round"/>' +
+    '<rect x="2.5" y="17" width="5" height="5" rx="1" fill="#ccd6df"/><rect x="16.5" y="17" width="5" height="5" rx="1" fill="#ccd6df"/>',
+} as const;
+
+export type IconName = ToolId | keyof typeof EXTRA_ICONS;
+
+/** An icon as an SVG element (built by the parser from the constants above, never from user text). */
+export function iconElement(name: IconName): SVGElement {
+  const body = name === 'heparin' || name === 'carm' ? EXTRA_ICONS[name] : ICONS[name];
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" aria-hidden="true">${body}</svg>`;
+  const doc = new DOMParser().parseFromString(svg, 'image/svg+xml');
+  return document.importNode(doc.documentElement, true) as unknown as SVGElement;
+}

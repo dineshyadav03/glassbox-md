@@ -156,8 +156,8 @@ export function focusPoint(sim: Simulation): Vec3 {
  * travels, close once it is in the heart, closest for the wire and the catheters in the artery.
  */
 export function suggestedDistance(sim: Simulation): number {
-  if (sim.tool === 'balloon' || sim.tool === 'stent') return 55;
-  if (sim.tool === 'wire') return 65;
+  if (sim.tool === 'balloon' || sim.tool === 'stent') return 70;
+  if (sim.tool === 'wire') return 85;
   if (sim.guide.engaged) return 120;
   if (sim.guide.s < 520) return 240;
   return 150;

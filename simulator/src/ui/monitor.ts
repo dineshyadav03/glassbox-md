@@ -15,18 +15,18 @@ const GAP = 14;
 export function createMonitor(): { root: HTMLElement; update(view: MonitorView, dt: number): void } {
   const canvas = el('canvas', { attrs: { width: String(WIDTH), height: String(HEIGHT), role: 'img', 'aria-label': 'Electrocardiogram trace, lead V2' } });
   const ctx = canvas.getContext('2d');
-  const tile = (label: string): { box: HTMLElement; value: HTMLElement } => {
+  const tile = (label: string, title: string): { box: HTMLElement; value: HTMLElement } => {
     const value = el('span', { className: 'tile-value', text: '--' });
-    return { box: el('div', { className: 'tile' }, [el('span', { className: 'tile-label', text: label }), value]), value };
+    return { box: el('div', { className: 'tile', title }, [el('span', { className: 'tile-label', text: label }), value]), value };
   };
-  const hr = tile('HR');
-  const bp = tile('BP');
-  const spo2 = tile('SpO2');
-  const act = tile('ACT s');
-  const st = tile('ST mm');
+  const hr = tile('HR', 'Heart rate, beats per minute');
+  const bp = tile('BP', 'Arterial blood pressure, mmHg');
+  const spo2 = tile('SpO2', 'Oxygen saturation, %');
+  const act = tile('ACT', 'Activated clotting time, seconds');
+  const st = tile('ST', 'ST elevation in lead V2, mm');
   const banner = el('p', { className: 'monitor-banner', attrs: { role: 'status' } });
   const root = el('section', { className: 'panel monitor' }, [
-    el('h2', { text: 'Monitor (ECG lead V2)' }),
+    el('h2', { className: 'panel-title', text: 'Monitor · ECG lead V2' }),
     canvas,
     el('div', { className: 'tiles' }, [hr.box, bp.box, spo2.box, act.box, st.box]),
     banner,

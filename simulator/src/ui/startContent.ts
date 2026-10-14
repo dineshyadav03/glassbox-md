@@ -4,6 +4,12 @@
 
 export const TITLE = 'Cath Lab: PCI Simulator';
 
+/** The start screen's headline, split so the second line can be styled quietly. */
+export const EYEBROW = 'Glassbox MD · Educational simulator';
+export const HEADLINE = 'Cath Lab';
+export const SUBTITLE = 'PCI simulator';
+export const TAGLINE = 'Stent a 90% blockage in the LAD through the wrist: seat the guide, steer the wire, open the artery, and see how you did.';
+
 export const DISCLAIMER =
   'Educational demonstration only. This is a coding project, not clinical training and not medical advice. ' +
   'The anatomy, physiology, device rules and scoring are simplified teaching models with invented numbers; ' +
