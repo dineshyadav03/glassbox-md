@@ -9,6 +9,7 @@ import type { NerveId, VesselId } from '../anatomy/vessels';
 import type { ToolId } from '../tools/tools';
 import { TOOL_BY_ID } from '../tools/tools';
 import { describeTarget } from '../anatomy/targets';
+import { t } from '../i18n';
 import { evaluateClip } from '../physics/clipEval';
 import { baselineVitals, stepVitals, type Vitals } from '../physics/vitals';
 
@@ -205,13 +206,13 @@ export interface DopplerReading {
 export function dopplerReading(state: FieldState, target: Target): DopplerReading {
   const flows = flowing(state);
   if (target.kind === 'vessel') {
-    return flows.has(target.id) ? { flow: true, text: 'Flow: a steady pulsing tone.' } : { flow: false, text: 'Silence: no flow in this vessel.' };
+    return flows.has(target.id) ? { flow: true, text: t('ev.flow.vessel') } : { flow: false, text: t('ev.silence.vessel') };
   }
   if (target.kind === 'aneurysm') {
-    if (flows.has('aneurysm') && state.clip) return { flow: true, text: 'Flow: the sac still fills. The clip has not closed the whole neck.' };
-    return flows.has('aneurysm') ? { flow: true, text: 'Flow: the sac is filling.' } : { flow: false, text: 'Silence: the sac is not filling.' };
+    if (flows.has('aneurysm') && state.clip) return { flow: true, text: t('ev.flow.sacStill') };
+    return flows.has('aneurysm') ? { flow: true, text: t('ev.flow.sac') } : { flow: false, text: t('ev.silence.sac') };
   }
-  return { flow: false, text: 'Silence: this is not a vessel.' };
+  return { flow: false, text: t('ev.silence.notVessel') };
 }
 
 // --- time ---------------------------------------------------------------------------------------------------
@@ -232,7 +233,7 @@ export function isObstructed(state: FieldState): boolean {
   return state.pooled >= RULES.obstructedAtPool;
 }
 
-const OBSTRUCTED = 'You cannot see: blood fills the field. Clear it with suction first.';
+const obstructedText = (): string => t('ev.obstructed');
 
 /** Move time on: the clocks run, blood is lost and pools, and the vital signs follow. */
 export function tick(state: FieldState, dt: number): FieldState {
@@ -262,7 +263,7 @@ function rupture(state: FieldState, tool: ToolId, why: string): Result {
     domeStress: 1,
     injuries: [...state.injuries, { target: 'aneurysm', tool, kind: 'rupture', time: state.time }],
   };
-  return done(next, event('rupture', 'bad', `The aneurysm has ruptured (${why}).`));
+  return done(next, event('rupture', 'bad', t('ev.rupture', { why })));
 }
 
 function addStress(state: FieldState, tool: ToolId, amount: number, why: string): Result {
@@ -274,78 +275,78 @@ function addStress(state: FieldState, tool: ToolId, amount: number, why: string)
 
 function scissors(state: FieldState, target: Target): Result {
   if (target.kind === 'arachnoid') {
-    if (state.cut.includes(target.id)) return done(state, event('already-cut', 'info', 'That membrane is already cut.'));
+    if (state.cut.includes(target.id)) return done(state, event('already-cut', 'info', t('ev.alreadyCut')));
     const next = nextSegment(state);
     if (next !== target.id) {
-      return done(state, event('wrong-order', 'warn', 'Cut the outer membrane first: the deeper ones are reached through it.'));
+      return done(state, event('wrong-order', 'warn', t('ev.wrongOrder')));
     }
-    return done({ ...state, cut: [...state.cut, target.id] }, event('cut', 'good', 'Membrane cut.'));
+    return done({ ...state, cut: [...state.cut, target.id] }, event('cut', 'good', t('ev.cut')));
   }
   if (target.kind === 'vessel') {
     const ooze: Ooze = { id: `cut-${target.id}-${state.injuries.length}`, on: target.id, remaining: RULES.briskCoagulateSeconds, brisk: true };
     return done(
       { ...state, oozes: [...state.oozes, ooze], injuries: [...state.injuries, { target: target.id, tool: 'scissors', kind: 'cut', time: state.time }] },
-      event('cut-injury', 'bad', 'The scissors have cut an artery. It is bleeding.'),
+      event('cut-injury', 'bad', t('ev.cutArtery')),
     );
   }
-  if (target.kind === 'aneurysm') return rupture(state, 'scissors', 'cut by the scissors');
+  if (target.kind === 'aneurysm') return rupture(state, 'scissors', t('why.scissors'));
   if (target.kind === 'nerve') {
     return done(
       { ...state, injuries: [...state.injuries, { target: target.id, tool: 'scissors', kind: 'cut', time: state.time }] },
-      event('cut-injury', 'bad', 'The scissors have cut a nerve.'),
+      event('cut-injury', 'bad', t('ev.cutNerve')),
     );
   }
-  return done(state, event('noop', 'info', 'Scissors cut the arachnoid membrane. Click a membrane.'));
+  return done(state, event('noop', 'info', t('ev.scissorsNoop')));
 }
 
 function spatula(state: FieldState): Result {
   const allowed = allowedRetraction(state);
-  if (state.retraction > 0) return done({ ...state, retraction: 0 }, event('released', 'info', 'The lobes are released.'));
-  if (allowed <= 0) return done(state, event('bound', 'warn', 'The fissure is bound by arachnoid. Cut the outer membrane first.'));
-  return done({ ...state, retraction: allowed, peakRetraction: Math.max(state.peakRetraction, allowed) }, event('retracted', 'good', allowed >= 1 ? 'The fissure is open and held.' : 'Held as far as the cut membrane allows. Cut more to open it further.'));
+  if (state.retraction > 0) return done({ ...state, retraction: 0 }, event('released', 'info', t('ev.released')));
+  if (allowed <= 0) return done(state, event('bound', 'warn', t('ev.bound')));
+  return done({ ...state, retraction: allowed, peakRetraction: Math.max(state.peakRetraction, allowed) }, event('retracted', 'good', allowed >= 1 ? t('ev.retractedFull') : t('ev.retractedPartial')));
 }
 
 function dissector(state: FieldState, target: Target): Result {
   if (target.kind === 'aneurysm' && (target.part === 'dome' || target.part === 'bleb')) {
-    const touched = addStress(state, 'dissector', RULES.domeStressRoughStroke, 'rough handling of the dome');
+    const touched = addStress(state, 'dissector', RULES.domeStressRoughStroke, t('why.dissector'));
     if (touched.state.ruptured && !state.ruptured) return touched;
-    return { state: touched.state, events: [event('rough', 'warn', 'Do not work on the dome. Free the neck, from the carotid side.')] };
+    return { state: touched.state, events: [event('rough', 'warn', t('ev.rough'))] };
   }
-  if (target.kind !== 'aneurysm') return done(state, event('noop', 'info', 'The dissector frees the aneurysm neck. Click the neck.'));
-  if (isObstructed(state)) return done(state, event('obstructed', 'warn', OBSTRUCTED));
+  if (target.kind !== 'aneurysm') return done(state, event('noop', 'info', t('ev.dissectorNoop')));
+  if (isObstructed(state)) return done(state, event('obstructed', 'warn', obstructedText()));
   if (!state.cut.includes('arach-ica') || state.retraction < RULES.retractionNeededForNeck) {
-    return done(state, event('neck-blocked', 'warn', 'You cannot reach the neck yet: open the fissure and cut the membrane over the carotid.'));
+    return done(state, event('neck-blocked', 'warn', t('ev.neckBlocked')));
   }
   const freed = clamp(state.neckFreed + RULES.dissectorStep, 0, 1);
   const first = state.neckFreed === 0 && !state.oozes.some((o) => o.id === 'ooze-neck');
   const oozes = first ? [...state.oozes, { id: 'ooze-neck', on: 'neck' as const, remaining: RULES.coagulateSeconds, brisk: false }] : state.oozes;
-  const text = freed >= RULES.neckFreedForClip ? 'The neck is free enough to clip.' : 'Neck freed a little more.';
-  return done({ ...state, neckFreed: freed, oozes }, event('neck-freed', 'good', first ? `${text} A small point is oozing: seal it with bipolar.` : text));
+  const text = freed >= RULES.neckFreedForClip ? t('ev.neckFree') : t('ev.neckMore');
+  return done({ ...state, neckFreed: freed, oozes }, event('neck-freed', 'good', first ? `${text} ${t('ev.neckOoze')}` : text));
 }
 
 function tempClip(state: FieldState, target: Target): Result {
   if (target.kind !== 'vessel' || target.id !== 'ica') {
-    return done(state, event('temp-refused', 'warn', 'The temporary clip goes on the carotid, before the aneurysm.'));
+    return done(state, event('temp-refused', 'warn', t('ev.tempRefused')));
   }
   if (state.tempClip.on) {
     return done(
       { ...state, tempClip: { on: false, seconds: 0, totalSeconds: state.tempClip.totalSeconds } },
-      event('temp-off', 'good', `Temporary clip released after ${Math.round(state.tempClip.seconds)} s.`),
+      event('temp-off', 'good', t('ev.tempOff', { s: Math.round(state.tempClip.seconds) })),
     );
   }
-  return done({ ...state, tempClip: { ...state.tempClip, on: true, seconds: 0 } }, event('temp-on', 'info', 'Temporary clip on the carotid. The clock is running.'));
+  return done({ ...state, tempClip: { ...state.tempClip, on: true, seconds: 0 } }, event('temp-on', 'info', t('ev.tempOn')));
 }
 
 function applyClip(state: FieldState, target: Target): Result {
   if (target.kind !== 'aneurysm' || target.part !== 'neck') {
-    return done(state, event('clip-refused', 'warn', 'The clip goes across the neck, not the dome. Click the neck.'));
+    return done(state, event('clip-refused', 'warn', t('ev.clipDome')));
   }
-  if (isObstructed(state)) return done(state, event('obstructed', 'warn', OBSTRUCTED));
-  if (state.clip) return done(state, event('clip-refused', 'warn', 'A clip is already on. Remove it (Backspace) to place it again.'));
+  if (isObstructed(state)) return done(state, event('obstructed', 'warn', obstructedText()));
+  if (state.clip) return done(state, event('clip-refused', 'warn', t('ev.clipOn')));
   if (state.neckFreed < RULES.neckFreedForClip) {
-    return done(state, event('clip-refused', 'warn', 'Free the neck first: the blades need room on both sides.'));
+    return done(state, event('clip-refused', 'warn', t('ev.clipFree')));
   }
-  return done({ ...state, checks: [], clip: { ...state.clipSetup, appliedAt: state.time } }, event('clip-on', 'good', 'Clip applied. Check it with the Doppler and ICG before you finish.'));
+  return done({ ...state, checks: [], clip: { ...state.clipSetup, appliedAt: state.time } }, event('clip-on', 'good', t('ev.clipApplied')));
 }
 
 function click(state: FieldState, tool: ToolId, target: Target): Result {
@@ -367,12 +368,12 @@ function click(state: FieldState, tool: ToolId, target: Target): Result {
       if (checked && state.clip && evaluateClip(state.clip).icaNarrowingPct >= RULES.clip.noticeNarrowingPct) checks = addOnce(checks, 'ica-narrowed');
       return done(
         { ...state, view, checks },
-        event('view', 'info', view === 'icg' ? 'Fluorescence view on.' : 'White-light view.'),
+        event('view', 'info', view === 'icg' ? t('ev.viewOn') : t('ev.viewOff')),
       );
     }
     case 'endoscope': {
       const on = !state.endoscope;
-      return done({ ...state, endoscope: on }, event('endoscope', 'info', on ? 'Endoscope view open.' : 'Endoscope view closed.'));
+      return done({ ...state, endoscope: on }, event('endoscope', 'info', on ? t('ev.scopeOn') : t('ev.scopeOff')));
     }
     case 'doppler': {
       const reading = dopplerReading(state, target);
@@ -393,7 +394,7 @@ function suction(state: FieldState, target: Target, dt: number): Result {
   const pooled = Math.max(0, state.pooled - RULES.suctionRate * dt);
   const cleared = { ...state, pooled };
   if (target.kind === 'aneurysm' && (target.part === 'dome' || target.part === 'bleb')) {
-    return addStress(cleared, 'suction', RULES.domeStressSuctionPerSecond * dt, 'suction on the dome');
+    return addStress(cleared, 'suction', RULES.domeStressSuctionPerSecond * dt, t('why.suction'));
   }
   return done(cleared);
 }
@@ -404,13 +405,13 @@ function bipolar(state: FieldState, target: Target, dt: number): Result {
     if (!found) return done(state);
     const remaining = found.remaining - dt;
     if (remaining <= 0) {
-      return done({ ...state, oozes: state.oozes.filter((o) => o.id !== found.id) }, event('sealed', 'good', 'Sealed.'));
+      return done({ ...state, oozes: state.oozes.filter((o) => o.id !== found.id) }, event('sealed', 'good', t('ev.sealed')));
     }
-    return done({ ...state, oozes: state.oozes.map((o) => (o.id === found.id ? { ...o, remaining } : o)) }, event('sealing', 'info', 'Sealing...'));
+    return done({ ...state, oozes: state.oozes.map((o) => (o.id === found.id ? { ...o, remaining } : o)) }, event('sealing', 'info', t('ev.sealing')));
   }
   if (target.kind === 'aneurysm') {
     if (target.part === 'neck') return done(state);
-    return addStress(state, 'bipolar', RULES.domeStressBipolarPerSecond * dt, 'bipolar on the dome');
+    return addStress(state, 'bipolar', RULES.domeStressBipolarPerSecond * dt, t('why.bipolar'));
   }
   if (target.kind === 'vessel' || target.kind === 'nerve') {
     const before = state.thermal[target.id] ?? 0;
@@ -419,7 +420,7 @@ function bipolar(state: FieldState, target: Target, dt: number): Result {
     if (before < RULES.thermalLimitSeconds && after >= RULES.thermalLimitSeconds) {
       return done(
         { ...next, injuries: [...next.injuries, { target: target.id, tool: 'bipolar', kind: 'thermal', time: state.time }] },
-        event('burned', 'bad', `Too much heat: that ${target.kind} is injured.`),
+        event('burned', 'bad', t('ev.burned', { what: t(target.kind === 'vessel' ? 'kind.vessel' : 'kind.nerve') })),
       );
     }
     return done(next);
@@ -444,8 +445,8 @@ export function identifiableId(target: Target): string | null {
 
 function identify(state: FieldState, target: Target): Result {
   const id = identifiableId(target);
-  if (id === null) return done(state, event('noop', 'info', 'Point at an artery, a nerve or the aneurysm, then identify it.'));
-  return done({ ...state, identified: addOnce(state.identified, id) }, event('identified', 'info', `That is: ${describeTarget(target)}.`));
+  if (id === null) return done(state, event('noop', 'info', t('ev.identifyNoop')));
+  return done({ ...state, identified: addOnce(state.identified, id) }, event('identified', 'info', t('ev.identified', { name: describeTarget(target) })));
 }
 
 export function setClip(state: FieldState, patch: { variant?: ClipVariant; angleDeg?: number; depth?: number }): FieldState {
@@ -472,6 +473,6 @@ export function act(state: FieldState, action: Action): Result {
     case 'setClip':
       return done(setClip(state, action));
     case 'removeClip':
-      return state.clip ? done({ ...state, checks: [], clip: null }, event('clip-off', 'info', 'Clip removed.')) : done(state);
+      return state.clip ? done({ ...state, checks: [], clip: null }, event('clip-off', 'info', t('ev.clipRemoved'))) : done(state);
   }
 }

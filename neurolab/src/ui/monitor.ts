@@ -1,3 +1,4 @@
+import { t, type MessageKey } from '../i18n';
 import { alarmFor, type Vitals } from '../physics/vitals';
 import { ecgSampleMv } from '../physics/ecg';
 
@@ -28,43 +29,58 @@ export interface MonitorView {
 const clock = (s: number): string => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
 
 /** The patient monitor: a sweeping ECG trace and the numbers. */
-export function createMonitor(): { root: HTMLElement; update(view: MonitorView, dt: number): void } {
+export function createMonitor(): { root: HTMLElement; update(view: MonitorView, dt: number): void; relabel(): void } {
   const canvas = node('canvas');
   canvas.width = WIDTH;
   canvas.height = HEIGHT;
   canvas.setAttribute('role', 'img');
-  canvas.setAttribute('aria-label', 'Electrocardiogram trace');
+  canvas.setAttribute('aria-label', t('mon.ecg'));
   const ctx = canvas.getContext('2d');
   const tiles: Record<string, HTMLElement> = {};
-  const tile = (key: string, label: string, title: string): HTMLElement => {
+  const labels: { key: string; box: HTMLElement; label: HTMLElement }[] = [];
+  const tile = (key: string): HTMLElement => {
     const value = node('span', 'tile-value', '--');
     tiles[key] = value;
     const box = node('div', 'tile');
-    box.title = title;
-    box.append(node('span', 'tile-label', label), value);
+    const label = node('span', 'tile-label');
+    box.append(label, value);
+    labels.push({ key, box, label });
     return box;
   };
+  const heading = node('h2');
   const banner = node('p', 'monitor-banner');
   banner.setAttribute('role', 'status');
   const root = node('section', 'panel monitor');
   root.append(
-    node('h2', undefined, 'Monitor'),
+    heading,
     canvas,
     (() => {
       const grid = node('div', 'tiles');
       grid.append(
-        tile('hr', 'HR', 'Heart rate, beats per minute'),
-        tile('bp', 'BP', 'Arterial blood pressure, mmHg'),
-        tile('spo2', 'SpO2', 'Oxygen saturation, %'),
-        tile('mep', 'MEP', 'Motor evoked potentials, % of baseline'),
-        tile('ebl', 'Blood', 'Estimated blood loss, millilitres'),
-        tile('time', 'Time', 'Operation time'),
-        tile('temp', 'Temp clip', 'Time on the current temporary clip'),
+        tile('hr'),
+        tile('bp'),
+        tile('spo2'),
+        tile('mep'),
+        tile('ebl'),
+        tile('time'),
+        tile('temp'),
       );
       return grid;
     })(),
     banner,
   );
+
+  const keyFor: Record<string, string> = { hr: 'hr', bp: 'bp', spo2: 'spo2', mep: 'mep', ebl: 'blood', time: 'time', temp: 'temp' };
+  const relabel = (): void => {
+    heading.textContent = t('panel.monitor');
+    canvas.setAttribute('aria-label', t('mon.ecg'));
+    for (const item of labels) {
+      const base = `mon.${keyFor[item.key]}`;
+      item.label.textContent = t(base as MessageKey);
+      item.box.title = t(`${base}.title` as MessageKey);
+    }
+  };
+  relabel();
 
   let x = 0;
   let phase = 0;
@@ -73,6 +89,7 @@ export function createMonitor(): { root: HTMLElement; update(view: MonitorView, 
 
   return {
     root,
+    relabel,
     update(view, dt): void {
       const v = view.vitals;
       const alarm = alarmFor(v);

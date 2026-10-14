@@ -43,6 +43,36 @@ sees. The aneurysm now points mostly outward (lateral) and down, with only a lit
 What a tool does not do yet: bleeding has no effect on vitals (M4); the clip is recorded but not evaluated (M5); the
 Doppler gives a text reading, not a tone (M5).
 
+## Debrief, demo and languages (M6)
+
+**Debrief** (`procedure/debrief.ts`, pure). Teaching weights, not an assessment standard; they add to 100:
+
+| Item | Points | How |
+|---|---|---|
+| Clip result | 35 | neck closed 15, PCom open 5, anterior choroidal open 5, carotid narrowing under 30% = 10 (under 70% = 5) |
+| Rupture | 20 | none 20; ruptured and then controlled by a closing clip 5; not controlled 0 |
+| Blood loss | 10 | under 100 ml 10, under 300 ml 7, under 800 ml 4, more 0 |
+| Temporary occlusion | 10 | up to 120 s 10, up to 180 s 7, up to 300 s 3, longer 0 |
+| Injuries | 10 | 5 off for each (a rupture is scored under Rupture, not here) |
+| Steps completed | 10 | in proportion |
+| Retraction time | 5 | 5 up to 600 s, otherwise 2 |
+
+Grades: 90 and over Excellent, 75 Good, 55 Fair, below that Needs work. A case with no clip is capped at 49, so doing
+nothing cannot pass just because nothing went wrong. Operation time and the lowest MEP are shown but carry no points.
+Tests cover a clean case, a rupture, a bad clip (open, pinched, narrowed), a long temporary clip, and an untouched case.
+
+**Demo** (`demo/autopilot.ts`, pure). A script of steps (tool, narration, camera shot, actions, held tools) walked by a
+`DemoRunner` as time passes. The screen carries the steps out with the same code as a click, so the demo cannot do
+anything a learner could not. A test plays it against the engine at 10, 30 and 120 frames a second and requires every
+step done, no injuries and an Excellent debrief; it takes about 45 s of case time. Any key or click on the view takes over.
+
+**Languages.** Every sentence is looked up by key in `i18n/en.ts` (the source of truth) or `i18n/ja.ts`. The compiler
+requires the Japanese table to have every key, and a test checks the keys match, every sentence is filled in, the
+`{placeholders}` are the same, and almost nothing is left in English. What a test cannot judge is whether the Japanese is
+good: I wrote it, it needs a native reader, and clinical wording in particular should be checked by a clinician. Switching
+language redraws the screen and keeps the case; the mentor's log keeps the language each note was written in. The choice
+is remembered in the browser when storage allows it.
+
 ## Judging the clip (M5)
 
 `physics/clipEval.ts`, with every threshold in `RULES.clip`. A clip is a bar across the neck, turned about the neck's
@@ -126,6 +156,6 @@ Stages are pure functions of the field state (`procedure/stages.ts`), so a scrip
 
 ## Verification
 
-Geometry and rules are tested in node (134 tests): aneurysm size and its config edit, branch connections, label
+Geometry and rules are tested in node (199 tests): aneurysm size and its config edit, branch connections, label
 placement, fold height bounds, fissure opening, membrane cutting, pulse swelling, camera maths. What the picture looks
 like is checked by eye in the browser; I say so plainly rather than claim a test proves it looks right.

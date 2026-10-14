@@ -3,6 +3,7 @@
  * on the structure it names after a config edit. (English only for now; M6 moves the text into the language files.)
  */
 import { ANATOMY } from '../config/anatomy';
+import { t, type MessageKey } from '../i18n';
 import { aneurysmGeometry } from './aneurysm';
 import { buildNerves, buildVessels } from './vessels';
 import { add, type Vec3 } from './vec3';
@@ -26,15 +27,15 @@ export function labelAnchors(config: Config = ANATOMY): LabelAnchor[] {
     add(t.path.positionAt(t.path.length * fraction), lift);
   const aneurysm = aneurysmGeometry(config);
   return [
-    { id: 'ica', text: 'Internal carotid artery', detail: 'The main artery that carries blood up to the brain on this side. The aneurysm arises from it.', position: along(vessels.ica, 0.35, [-5, 0, 0]) },
-    { id: 'm1', text: 'M1', detail: 'The first segment of the middle cerebral artery, running outward along the sylvian fissure.', position: along(vessels.m1, 0.55, [0, 4, 0]) },
-    { id: 'a1', text: 'A1', detail: 'The first segment of the anterior cerebral artery, running toward the midline.', position: along(vessels.a1, 0.6, [0, 4, 0]) },
-    { id: 'pcom', text: 'PCom', detail: 'The posterior communicating artery. It leaves the carotid right beside the aneurysm and must stay open.', position: along(vessels.pcom, 0.85, [-5, -1, 0]) },
-    { id: 'achoa', text: 'Anterior choroidal', detail: 'A small but important branch just beyond the aneurysm. A clip that narrows it can cause harm.', position: along(vessels.achoa, 0.9, [4, -3, 0]) },
-    { id: 'optic', text: 'Optic nerve', detail: 'The nerve of sight. It lies beside the carotid and must be protected.', position: along(nerves.optic, 0.5, [-4, 4, 0]) },
-    { id: 'oculomotor', text: 'Oculomotor nerve', detail: 'The third cranial nerve, which moves the eye and lifts the eyelid. It runs below the posterior communicating artery.', position: along(nerves.oculomotor, 0.5, [0, -4, 0]) },
-    { id: 'aneurysm', text: 'Aneurysm', detail: 'A weak, ballooned part of the artery wall at the carotid and posterior communicating junction. It can rupture.', position: add(aneurysm.domeCentre, [6, -4, 0]), emphasis: true },
-    { id: 'frontal', text: 'Frontal lobe', detail: 'Held up out of the way, so the surgeon can see the vessels beneath it.', position: [-20, 24, -10] },
-    { id: 'temporal', text: 'Temporal lobe', detail: 'Held down out of the way, so the surgeon can see the vessels above it.', position: [-20, -26, -10] },
+    { id: 'ica', text: t('label.ica' as MessageKey), detail: t('label.ica.detail' as MessageKey), position: along(vessels.ica, 0.35, [-5, 0, 0]) },
+    { id: 'm1', text: t('label.m1' as MessageKey), detail: t('label.m1.detail' as MessageKey), position: along(vessels.m1, 0.55, [0, 4, 0]) },
+    { id: 'a1', text: t('label.a1' as MessageKey), detail: t('label.a1.detail' as MessageKey), position: along(vessels.a1, 0.6, [0, 4, 0]) },
+    { id: 'pcom', text: t('label.pcom' as MessageKey), detail: t('label.pcom.detail' as MessageKey), position: along(vessels.pcom, 0.85, [-5, -1, 0]) },
+    { id: 'achoa', text: t('label.achoa' as MessageKey), detail: t('label.achoa.detail' as MessageKey), position: along(vessels.achoa, 0.9, [4, -3, 0]) },
+    { id: 'optic', text: t('label.optic' as MessageKey), detail: t('label.optic.detail' as MessageKey), position: along(nerves.optic, 0.5, [-4, 4, 0]) },
+    { id: 'oculomotor', text: t('label.oculomotor' as MessageKey), detail: t('label.oculomotor.detail' as MessageKey), position: along(nerves.oculomotor, 0.5, [0, -4, 0]) },
+    { id: 'aneurysm', text: t('label.aneurysm' as MessageKey), detail: t('label.aneurysm.detail' as MessageKey), position: add(aneurysm.domeCentre, [6, -4, 0]), emphasis: true },
+    { id: 'frontal', text: t('label.frontal' as MessageKey), detail: t('label.frontal.detail' as MessageKey), position: [-20, 24, -10] },
+    { id: 'temporal', text: t('label.temporal' as MessageKey), detail: t('label.temporal.detail' as MessageKey), position: [-20, -26, -10] },
   ];
 }

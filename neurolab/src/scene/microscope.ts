@@ -6,6 +6,8 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { ANATOMY } from '../config/anatomy';
+import { labelAnchors, type LabelAnchor } from '../anatomy/labels';
+import { t as tr } from '../i18n';
 import { classifyHit } from '../anatomy/targets';
 import { NO_TARGET, type Target } from '../procedure/field';
 import type { BrainScene } from './brainScene';
@@ -25,6 +27,10 @@ export interface Microscope {
   readonly labelsVisible: boolean;
   /** Fly back to the starting view. */
   resetView(): void;
+  /** Fly to look at a point from the usual direction, `distance` mm away. */
+  flyTo(point: readonly [number, number, number], distance: number): void;
+  /** Redraw the words in the view (labels, the endoscope caption, the description) after a language change. */
+  relabel(): void;
   /** Called once per frame with the seconds since the last one (at most 0.25). */
   onFrame: ((dt: number) => void) | null;
   /** Heart rate for the pulse, beats per minute. */
@@ -46,10 +52,7 @@ export function createMicroscope(container: HTMLElement, scene: BrainScene): Mic
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1.05;
   renderer.domElement.setAttribute('role', 'img');
-  renderer.domElement.setAttribute(
-    'aria-label',
-    'Operating-microscope view of the sylvian fissure with the carotid artery and its aneurysm. Drag to look around, scroll to zoom, right-drag to move.',
-  );
+  renderer.domElement.setAttribute('aria-label', tr('view.aria'));
   renderer.domElement.style.display = 'block';
   container.append(renderer.domElement);
 
@@ -130,7 +133,7 @@ export function createMicroscope(container: HTMLElement, scene: BrainScene): Mic
   insetFrame.className = 'endoscope-frame';
   insetFrame.hidden = true;
   const insetLabel = document.createElement('span');
-  insetLabel.textContent = 'Endoscope';
+  insetLabel.textContent = tr('endoscope.label');
   insetFrame.append(insetLabel);
   container.append(insetFrame);
   const endoscope = new THREE.PerspectiveCamera(55, 1, 0.5, 400);
@@ -145,20 +148,26 @@ export function createMicroscope(container: HTMLElement, scene: BrainScene): Mic
   const layer = document.createElement('div');
   layer.className = 'label-layer';
   container.append(layer);
-  const elements = scene.labels.map((anchor) => {
-    const node = document.createElement('span');
-    node.className = anchor.emphasis ? 'anatomy-label emphasis' : 'anatomy-label';
-    node.textContent = anchor.text;
-    node.title = anchor.detail;
-    layer.append(node);
-    return node;
-  });
+  let anchors: readonly LabelAnchor[] = scene.labels;
+  let elements: HTMLElement[] = [];
+  const buildLabels = (): void => {
+    layer.replaceChildren();
+    elements = anchors.map((anchor) => {
+      const node = document.createElement('span');
+      node.className = anchor.emphasis ? 'anatomy-label emphasis' : 'anatomy-label';
+      node.textContent = anchor.text;
+      node.title = anchor.detail;
+      layer.append(node);
+      return node;
+    });
+  };
+  buildLabels();
   let showLabels = true;
   const scratch = new THREE.Vector3();
 
   const updateLabels = (width: number, height: number): void => {
     scene.root.updateMatrixWorld();
-    scene.labels.forEach((anchor, i) => {
+    anchors.forEach((anchor, i) => {
       const node = elements[i]!;
       scratch.set(...anchor.position).project(camera);
       if (!showLabels || scratch.z < -1 || scratch.z > 1 || Math.abs(scratch.x) > 0.96 || Math.abs(scratch.y) > 0.96) {
@@ -192,7 +201,7 @@ export function createMicroscope(container: HTMLElement, scene: BrainScene): Mic
   resize();
 
   // --- reset move ------------------------------------------------------------------------------------------
-  let move: { from: THREE.Vector3; fromTarget: THREE.Vector3; start: number } | null = null;
+  let move: { from: THREE.Vector3; fromTarget: THREE.Vector3; to: THREE.Vector3; toTarget: THREE.Vector3; start: number } | null = null;
   const home = new THREE.Vector3(...cam.position);
   const homeTarget = new THREE.Vector3(...cam.target);
   const cancelMove = (): void => {
@@ -226,7 +235,24 @@ export function createMicroscope(container: HTMLElement, scene: BrainScene): Mic
       return showLabels;
     },
     resetView(): void {
-      move = { from: camera.position.clone(), fromTarget: controls.target.clone(), start: performance.now() };
+      move = { from: camera.position.clone(), fromTarget: controls.target.clone(), to: home, toTarget: homeTarget, start: performance.now() };
+    },
+    flyTo(point: readonly [number, number, number], distance: number): void {
+      const target = new THREE.Vector3(...point);
+      const direction = home.clone().sub(homeTarget).normalize();
+      move = {
+        from: camera.position.clone(),
+        fromTarget: controls.target.clone(),
+        to: target.clone().addScaledVector(direction, distance),
+        toTarget: target,
+        start: performance.now(),
+      };
+    },
+    relabel(): void {
+      renderer.domElement.setAttribute('aria-label', tr('view.aria'));
+      insetLabel.textContent = tr('endoscope.label');
+      anchors = labelAnchors();
+      buildLabels();
     },
     dispose(): void {
       cancelAnimationFrame(frame);
@@ -251,8 +277,8 @@ export function createMicroscope(container: HTMLElement, scene: BrainScene): Mic
     api.onFrame?.(dt);
     if (move) {
       const t = easeInOut((now - move.start) / 700);
-      camera.position.lerpVectors(move.from, home, t);
-      controls.target.lerpVectors(move.fromTarget, homeTarget, t);
+      camera.position.lerpVectors(move.from, move.to, t);
+      controls.target.lerpVectors(move.fromTarget, move.toTarget, t);
       if (t >= 1) move = null;
     }
     controls.update();

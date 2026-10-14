@@ -4,6 +4,7 @@
  */
 import { ANATOMY } from '../config/anatomy';
 import type { Target } from '../procedure/field';
+import { t, type MessageKey } from '../i18n';
 import { aneurysmGeometry } from './aneurysm';
 import type { NerveId, VesselId } from './vessels';
 import { dot, sub, type Vec3 } from './vec3';
@@ -35,33 +36,22 @@ export function classifyHit(name: string, point: Vec3, config: Config = ANATOMY)
   return { kind: 'none' };
 }
 
-const VESSEL_NAMES: Readonly<Record<VesselId, string>> = {
-  ica: 'Internal carotid artery',
-  m1: 'M1 (middle cerebral artery)',
-  'm2-upper': 'M2, upper branch',
-  'm2-lower': 'M2, lower branch',
-  a1: 'A1 (anterior cerebral artery)',
-  pcom: 'Posterior communicating artery',
-  achoa: 'Anterior choroidal artery',
-};
-
-/** A short name for what is under the pointer, for the status line. */
+/** A short name for what is under the pointer, in the current language, for the status line. */
 export function describeTarget(target: Target): string {
   switch (target.kind) {
     case 'none':
       return '';
     case 'lobe':
-      return target.id === 'frontal' ? 'Frontal lobe' : 'Temporal lobe';
+      return t(`name.${target.id}` as MessageKey);
     case 'arachnoid':
-      return 'Arachnoid membrane';
+      return t('name.arachnoid');
     case 'vessel':
-      return VESSEL_NAMES[target.id];
     case 'nerve':
-      return target.id === 'optic' ? 'Optic nerve' : 'Oculomotor nerve';
+      return t(`name.${target.id}` as MessageKey);
     case 'aneurysm':
-      return target.part === 'neck' ? 'Aneurysm neck' : target.part === 'bleb' ? 'Aneurysm bleb' : 'Aneurysm dome';
+      return t(target.part === 'neck' ? 'name.neck' : target.part === 'bleb' ? 'name.bleb' : 'name.dome');
     case 'ooze':
-      return 'Bleeding point';
+      return t('name.ooze');
   }
 }
 

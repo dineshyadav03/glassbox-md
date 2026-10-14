@@ -1,6 +1,6 @@
 # Plan: Brain Surgery Simulator (aneurysm clipping), for approval
 
-**Status: approved with the fastest defaults (D1 copy, D2 English+Japanese, D3 no reviewer, D4 straight+curved clips, D5 before the Atlas). M0 to M3 done; M4 next.**
+**Status: approved with the fastest defaults (D1 copy, D2 English+Japanese, D3 no reviewer, D4 straight+curved clips, D5 before the Atlas). All of M0 to M6 are done.**
 
 Source: the "Build a Brain Surgery Simulator in Your Browser" build guide you pasted (the prompt and milestones).
 Where it will live: `neurolab/` in this repository, served by the Glassbox MD app at `/neurolab/`, the same way

@@ -4,6 +4,7 @@
  * every number is in `config/rules.ts` and is invented.
  */
 import { RULES } from '../config/rules';
+import { t } from '../i18n';
 
 export interface Vitals {
   readonly hr: number;
@@ -52,9 +53,9 @@ export interface Alarm {
 /** The monitor's alarm banner, or null when nothing is out of range. */
 export function alarmFor(v: Vitals): Alarm | null {
   const b = RULES.vitals;
-  if (v.sbp < b.lowSbp) return { text: 'Low blood pressure' };
-  if (v.spo2 < b.lowSpo2) return { text: 'Low oxygen saturation' };
-  if (v.mep < b.lowMep) return { text: 'Motor evoked potentials falling' };
-  if (v.hr > b.highHr) return { text: 'Fast heart rate' };
+  if (v.sbp < b.lowSbp) return { text: t('alarm.bp') };
+  if (v.spo2 < b.lowSpo2) return { text: t('alarm.spo2') };
+  if (v.mep < b.lowMep) return { text: t('alarm.mep') };
+  if (v.hr > b.highHr) return { text: t('alarm.hr') };
   return null;
 }

@@ -57,6 +57,8 @@ export interface BrainScene {
   setOozes(oozes: readonly { readonly id: string; readonly on: string }[]): void;
   /** Show the pool of blood (in pool units) and, while a rupture is uncontrolled, the jet from the dome. */
   setBlood(pooled: number, spurting: boolean, seconds: number): void;
+  /** Where the aneurysm neck meets the carotid, for aiming the camera. */
+  readonly neckCentre: Vec3;
   /** Where the endoscope sits (behind the aneurysm) and what it looks at (the neck). */
   readonly endoscopeView: { readonly position: Vec3; readonly target: Vec3 };
   dispose(): void;
@@ -367,6 +369,7 @@ export function buildBrainScene(config: Config = ANATOMY, opening = 1): BrainSce
         d.scale.setScalar(1 - phase * 0.55);
       });
     },
+    neckCentre: an.neckCentre,
     endoscopeView: {
       position: [an.domeCentre[0] + an.axis[0] * (an.domeRadius + 13), an.domeCentre[1] + an.axis[1] * (an.domeRadius + 13), an.domeCentre[2] + an.axis[2] * (an.domeRadius + 13)],
       target: an.neckCentre,

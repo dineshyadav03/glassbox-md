@@ -7,7 +7,7 @@ aneurysm through a pterional, transsylvian approach, seen through an operating m
 simplified, procedural 3D shapes and every number is invented** (see [DESIGN-NOTES.md](DESIGN-NOTES.md)). It is not
 connected to the Glassbox MD diagnostic pipeline or to any case.
 
-## Status: milestone M5 of M6
+## Status: complete (milestones M0 to M6)
 
 Done: the operating-microscope view of the field (folded lobes, the sylvian fissure that opens and closes, ICA, M1 and
 M2, A1, PCom, anterior choroidal artery, optic and oculomotor nerves, the 6.6 mm aneurysm with its bleb, the two
@@ -33,7 +33,15 @@ Also done (M5): the clip is judged. Depth and angle decide whether the neck clos
 whether the PCom or the anterior choroidal artery is pinched, and ICG and the Doppler show it: a good clip darkens the sac
 and leaves the arteries glowing; a bad one does not. Hold the Doppler on a vessel with flow to hear one whoosh a heartbeat.
 
-Next: debrief, demo, English and Japanese (M6). The plan is in [PLAN.md](PLAN.md).
+Also done (M6): a debrief that scores the case (clip result, rupture, blood loss, temporary occlusion, injuries, steps,
+retraction time) with an Excellent / Good / Fair / Needs work grade and tips; a narrated demo that performs the whole case
+and ends on an Excellent debrief (press any key or click to take over); and English and Japanese throughout, switchable
+on the start screen and in the lab. The Japanese has been checked for completeness only, not for quality: please have a
+native reader, ideally a clinician, review it. The plan is in [PLAN.md](PLAN.md).
+
+| The debrief after the demo | Japanese, with the ICG view | A rupture: pool, jet and monitor |
+|---|---|---|
+| ![The debrief: Excellent, 100 out of 100](docs/screenshots/debrief-excellent.jpg) | ![The lab in Japanese with the fluorescence view](docs/screenshots/japanese-icg.jpg) | ![A ruptured aneurysm with a pool of blood and the patient monitor](docs/screenshots/rupture-and-monitor.jpg) |
 
 ## Run it
 
@@ -49,8 +57,10 @@ npm run build      # production build into dist/, which the Glassbox app serves 
 
 Inside the Glassbox app: build it once, restart the app, and pick "Brain surgery simulator" in the start menu.
 
+Press **Watch a demo first** on the start screen to see the whole case performed with narration (speed 1×, 2× or 4×).
+
 Keys: `1` to `9` and `0` pick the tools (suction, scissors, bipolar, dissector, spatula, clip, ICG, Doppler, endoscope,
-temporary clip). With the clip: `A` and `D` turn it, `W` and `S` set blade depth, `V` swaps straight and curved, and
+temporary clip), `I` identifies what is under the pointer, `N` toggles sound. With the clip: `A` and `D` turn it, `W` and `S` set blade depth, `V` swaps straight and curved, and
 Backspace removes it. `L` labels, `R` resets the view. Left-click uses the tool; right-drag looks around, scroll zooms,
 and the arrow keys or middle-drag move.
 

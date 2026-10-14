@@ -59,6 +59,13 @@ It is educational only and uses invented numbers, so please keep its disclaimer 
 constants in `simulator/src/config/anatomy.ts`, and keep rules in pure functions with a test. Nothing in it reads
 or writes patient data, and it is deliberately not connected to the diagnostic pipeline.
 
+## The brain-surgery simulator
+
+`neurolab/` is built and checked the same way (`cd neurolab && npm ci && npm test && npm run build`; it is served at
+`/neurolab/`). Every sentence the learner reads goes in `neurolab/src/i18n/en.ts` and `ja.ts` (the compiler and a test
+check the two match); rules live in pure functions under `procedure/` and `physics/` with a test, and numbers in
+`config/rules.ts` and `config/anatomy.ts`. Keep the educational-only wording on the start screen.
+
 ## Before opening a pull request
 
 - **Run the test suite**: `pytest` (and `npm test` in `simulator/` if you touched it). All tests should pass; add new ones

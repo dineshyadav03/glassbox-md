@@ -4,6 +4,7 @@
  * something went wrong and how to think about it, or a clock that has run long. `adviceNow` is the standing hint.
  */
 import { RULES } from '../config/rules';
+import { t } from '../i18n';
 import type { FieldEvent, FieldState } from './field';
 import { STAGES, currentStage, nextTask, stageViews } from './stages';
 
@@ -23,13 +24,13 @@ export interface Advice {
 /** What the learner has found wrong with the clip so far (only what they have checked), as advice, or null. */
 function clipProblem(state: FieldState): string | null {
   if (state.checks.includes('sac-fills')) {
-    return 'The sac still fills: the clip has not closed the whole neck. Remove it (Backspace) and place it deeper, or turned along the carotid.';
+    return t('mn.sacFills');
   }
   if (state.checks.includes('pcom-silent')) {
-    return 'The PCom has no flow: the clip is pinching it. Remove the clip (Backspace) and turn it away from the PCom.';
+    return t('mn.pcomSilent');
   }
   if (state.checks.includes('ica-narrowed')) {
-    return 'The carotid looks narrowed under ICG: the blades reach too far into it. Remove the clip (Backspace) and place it less deep.';
+    return t('mn.icaNarrowed');
   }
   return null;
 }
@@ -39,17 +40,12 @@ export function adviceNow(state: FieldState): Advice {
   const next = nextTask(state);
   const problem = state.clip && !state.tempClip.on ? clipProblem(state) : null;
   if (problem && next && next.stage.number === 6) {
-    return { eyebrow: `Step ${next.stage.number} of ${STAGES.length}`, title: next.stage.title, hint: problem, why: next.stage.why };
+    return { eyebrow: t('mn.eyebrow', { n: next.stage.number, total: STAGES.length }), title: next.stage.title, hint: problem, why: next.stage.why };
   }
   if (!next) {
-    return {
-      eyebrow: 'All six steps done',
-      title: 'The aneurysm is clipped and checked',
-      hint: 'The debrief arrives in a later milestone. You can keep exploring.',
-      why: 'Clipping, then checking flow in the sac and the neighbouring arteries, is the whole point of the operation.',
-    };
+    return { eyebrow: t('mn.doneEyebrow'), title: t('mn.doneTitle'), hint: t('mn.doneHint'), why: t('mn.doneWhy') };
   }
-  return { eyebrow: `Step ${next.stage.number} of ${STAGES.length}`, title: next.stage.title, hint: next.task.hint, why: next.stage.why };
+  return { eyebrow: t('mn.eyebrow', { n: next.stage.number, total: STAGES.length }), title: next.stage.title, hint: next.task.hint, why: next.stage.why };
 }
 
 const crossed = (before: number, after: number, line: number): boolean => before < line && after >= line;
@@ -62,45 +58,45 @@ export function notesFor(prev: FieldState, next: FieldState, events: readonly Fi
   const after = stageViews(next);
   after.forEach((view, i) => {
     if (view.status === 'done' && before[i]!.status !== 'done') {
-      notes.push({ tone: 'good', text: `Step ${view.stage.number} complete: ${view.stage.title}.` });
+      notes.push({ tone: 'good', text: t('mn.stepComplete', { n: view.stage.number, title: view.stage.title }) });
     }
   });
   const was = currentStage(prev);
   const now = currentStage(next);
-  if (was && now && was.stage.number !== now.stage.number) notes.push({ tone: 'info', text: `Next: step ${now.stage.number}, ${now.stage.title}.` });
-  if (was && !now) notes.push({ tone: 'good', text: 'All six steps are done. Well worked.' });
+  if (was && now && was.stage.number !== now.stage.number) notes.push({ tone: 'info', text: t('mn.next', { n: now.stage.number, title: now.stage.title }) });
+  if (was && !now) notes.push({ tone: 'good', text: t('mn.allDone') });
 
   for (const e of events) {
     if (e.code === 'rupture') {
       notes.push({
         tone: 'bad',
-        text: 'The aneurysm has ruptured. Stay calm: clear the blood with suction, put a temporary clip on the carotid to slow the bleeding, then clip the neck.',
+        text: t('mn.rupture'),
       });
     } else if (e.code === 'cut-injury' || e.code === 'burned') {
-      notes.push({ tone: 'bad', text: `${e.text} Injuries are recorded and will count at the debrief.` });
+      notes.push({ tone: 'bad', text: t('mn.injury', { text: e.text }) });
     } else if (e.code === 'neck-blocked' || e.code === 'obstructed' || e.code === 'bound' || e.code === 'wrong-order' || e.code === 'clip-refused') {
       notes.push({ tone: 'warn', text: e.text });
     }
   }
 
   if (crossed(prev.domeStress, next.domeStress, 0.6) && !next.ruptured) {
-    notes.push({ tone: 'warn', text: 'You are straining the dome. Work on the neck, from the carotid side, not on the dome.' });
+    notes.push({ tone: 'warn', text: t('mn.strain') });
   }
   const below = (before: number, after: number, line: number): boolean => before >= line && after < line;
   if (below(prev.vitals.sbp, next.vitals.sbp, RULES.vitals.lowSbp)) {
-    notes.push({ tone: 'bad', text: 'Blood pressure is falling from blood loss. Control the bleeding first: temporary clip, then the clip.' });
+    notes.push({ tone: 'bad', text: t('mn.bp') });
   }
   if (below(prev.vitals.mep, next.vitals.mep, RULES.vitals.lowMep)) {
-    notes.push({ tone: 'bad', text: 'The motor evoked potentials are falling. Release the temporary clip if it is on, and keep the pressure up.' });
+    notes.push({ tone: 'bad', text: t('mn.mep') });
   }
   if (next.tempClip.on && crossed(prev.tempClip.seconds, next.tempClip.seconds, RULES.tempClipWarnSeconds)) {
-    notes.push({ tone: 'warn', text: 'The temporary clip has been on for three minutes. Plan to release it soon.' });
+    notes.push({ tone: 'warn', text: t('mn.temp3') });
   }
   if (next.tempClip.on && crossed(prev.tempClip.seconds, next.tempClip.seconds, RULES.tempClipLongSeconds)) {
-    notes.push({ tone: 'bad', text: 'Temporary occlusion is now long. Release the clip: the brain beyond it is going without blood.' });
+    notes.push({ tone: 'bad', text: t('mn.tempLong') });
   }
   if (crossed(prev.retractionSeconds, next.retractionSeconds, RULES.retractionWarnSeconds) && next.retraction > 0) {
-    notes.push({ tone: 'warn', text: 'The lobes have been held apart for ten minutes. Relax the spatula when you can.' });
+    notes.push({ tone: 'warn', text: t('mn.retraction') });
   }
   return notes;
 }
