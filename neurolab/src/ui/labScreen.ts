@@ -1,7 +1,8 @@
 import { describeTarget } from '../anatomy/targets';
 import { ANATOMY } from '../config/anatomy';
 import { RULES } from '../config/rules';
-import { act, flowing, initialField, tick, type Action, type FieldEvent, type FieldState } from '../procedure/field';
+import { DopplerSound, type AudioContextLike } from '../audio/doppler';
+import { act, dopplerReading, flowing, initialField, tick, type Action, type FieldEvent, type FieldState } from '../procedure/field';
 import { adviceNow, notesFor, type MentorNote } from '../procedure/mentor';
 import { stageViews } from '../procedure/stages';
 import { buildBrainScene } from '../scene/brainScene';
@@ -67,13 +68,18 @@ export function renderLabScreen(root: HTMLElement, onLeave: () => void): void {
     labelsButton.classList.toggle('on', scope.labelsVisible);
   });
   labelsButton.classList.add('on');
+  const soundButton = makeButton('Sound', 'N', () => {
+    sound.enabled = !sound.enabled;
+    soundButton.classList.toggle('on', sound.enabled);
+  });
+  soundButton.classList.add('on');
   const reset = makeButton('Reset view', 'R', () => scope?.resetView());
   const leave = node('button', 'ghost', 'Leave');
   leave.addEventListener('click', () => {
     dispose();
     onLeave();
   });
-  buttons.append(labelsButton, reset, leave);
+  buttons.append(labelsButton, soundButton, reset, leave);
   bar.append(brand, note, buttons);
 
   // --- the steps panel (left) --------------------------------------------------------------------------------------------
@@ -127,6 +133,7 @@ export function renderLabScreen(root: HTMLElement, onLeave: () => void): void {
   };
 
   const monitor = createMonitor();
+  const sound = new DopplerSound(() => new AudioContext() as unknown as AudioContextLike);
 
   const readoutPanel = node('section', 'panel readout');
   readoutPanel.append(node('h2', undefined, 'The field'));
@@ -274,6 +281,8 @@ export function renderLabScreen(root: HTMLElement, onLeave: () => void): void {
       shownOpening += (field.retraction - shownOpening) * (1 - Math.exp(-dt * 4));
       if (Math.abs(field.retraction - shownOpening) < 0.002) shownOpening = field.retraction;
       scene.setFissureOpening(shownOpening);
+      const probing = pressed && tool === 'doppler' && dopplerReading(field, scope.pointerTarget()).flow;
+      sound.tick(dt, probing, field.vitals.hr);
       scene.setBlood(field.pooled, field.ruptured && !field.clip, field.time);
       monitor.update(
         { vitals: field.vitals, eblMl: field.ebl, seconds: field.time, tempClipOn: field.tempClip.on, tempClipSeconds: field.tempClip.seconds },
@@ -299,6 +308,7 @@ export function renderLabScreen(root: HTMLElement, onLeave: () => void): void {
     if (picked) return selectTool(picked.id);
     if (key === 'l') return labelsButton.click();
     if (key === 'r') return reset.click();
+    if (key === 'n') return soundButton.click();
     if (key === 'i' && scope) return apply({ type: 'identify', target: scope.pointerTarget() });
     if (key === 'backspace') return apply({ type: 'removeClip' });
     if (tool !== 'clip') return;

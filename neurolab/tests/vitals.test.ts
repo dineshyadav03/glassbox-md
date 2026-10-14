@@ -4,6 +4,7 @@ import { cardiacPhase, ecgSampleMv } from '../src/physics/ecg';
 import { alarmFor, baselineVitals, lossFraction, stepVitals } from '../src/physics/vitals';
 import { act, bleedRate, initialField, isObstructed, tick, type Action, type FieldState, type Target } from '../src/procedure/field';
 import { notesFor } from '../src/procedure/mentor';
+import { goodClip } from '../src/physics/clipEval';
 import type { ToolId } from '../src/tools/tools';
 
 const NONE: Target = { kind: 'none' };
@@ -122,7 +123,7 @@ describe('bleeding', () => {
     expect(bleedRate(burst)).toBeCloseTo(RULES.bleedRuptureMlPerSecond, 9);
     const clamped = run(burst, use('tempClip', ICA));
     expect(bleedRate(clamped)).toBeCloseTo(RULES.bleedRuptureMlPerSecond * RULES.tempClipBleedFactor, 9);
-    expect(bleedRate({ ...burst, clip: { variant: 'straight', angleDeg: 0, depth: 0.8, appliedAt: 0 } })).toBe(0);
+    expect(bleedRate({ ...burst, clip: { ...goodClip(), appliedAt: 0 } })).toBe(0);
   });
 
   it('adds up the blood lost and pools it, up to the pool limit', () => {
@@ -166,7 +167,7 @@ describe('a ruptured case', () => {
     s = run(s, use('tempClip', ICA));
     for (let i = 0; i < 24; i++) s = act(tick(s, 0.25), hold('suction', NONE, 0.25)).state;
     expect(isObstructed(s)).toBe(false);
-    s = run(s, use('clip', NECK));
+    s = run(s, { type: 'setClip', ...goodClip() }, use('clip', NECK));
     expect(s.clip).not.toBeNull();
     s = run(s, use('tempClip', ICA));
     expect(bleedRate(s)).toBeGreaterThanOrEqual(0);

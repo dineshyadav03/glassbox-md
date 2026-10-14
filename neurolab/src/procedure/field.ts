@@ -9,6 +9,7 @@ import type { NerveId, VesselId } from '../anatomy/vessels';
 import type { ToolId } from '../tools/tools';
 import { TOOL_BY_ID } from '../tools/tools';
 import { describeTarget } from '../anatomy/targets';
+import { evaluateClip } from '../physics/clipEval';
 import { baselineVitals, stepVitals, type Vitals } from '../physics/vitals';
 
 export type Target =
@@ -64,7 +65,7 @@ export interface FieldState {
   readonly peakRetraction: number;
   /** Structures the learner has pointed at and identified: vessel ids, nerve ids, and 'aneurysm'. */
   readonly identified: readonly string[];
-  /** Checks made after clipping: 'pcom-flow', 'sac-silent', 'icg-checked'. */
+  /** Findings after clipping: 'pcom-flow', 'sac-silent', 'icg-checked', and the bad ones 'sac-fills', 'pcom-silent', 'ica-narrowed'. */
   readonly checks: readonly string[];
   /** Seconds the lobes have been held apart. */
   readonly retractionSeconds: number;
@@ -182,9 +183,16 @@ export function nextSegment(state: FieldState): string | null {
 /** What has blood flowing in it right now. The carotid feeds everything beyond it; a temporary clip stops that. */
 export function flowing(state: FieldState): ReadonlySet<VesselId | 'aneurysm'> {
   if (state.tempClip.on) return new Set();
-  const all: (VesselId | 'aneurysm')[] = ['ica', 'm1', 'm2-upper', 'm2-lower', 'a1', 'pcom', 'achoa'];
-  // The sac fills unless a clip is across its neck (how well is judged in a later milestone).
-  if (!state.clip) all.push('aneurysm');
+  if (!state.clip) return new Set<VesselId | 'aneurysm'>(['ica', 'm1', 'm2-upper', 'm2-lower', 'a1', 'pcom', 'achoa', 'aneurysm']);
+  const result = evaluateClip(state.clip);
+  const all: (VesselId | 'aneurysm')[] = ['ica'];
+  // A clip that narrows the carotid too far starves everything beyond it.
+  if (result.icaNarrowingPct < RULES.clip.blockNarrowingPct) {
+    all.push('m1', 'm2-upper', 'm2-lower', 'a1');
+    if (result.pcomOpen) all.push('pcom');
+    if (result.achoaOpen) all.push('achoa');
+  }
+  if (!result.closed) all.push('aneurysm');
   return new Set(all);
 }
 
@@ -200,6 +208,7 @@ export function dopplerReading(state: FieldState, target: Target): DopplerReadin
     return flows.has(target.id) ? { flow: true, text: 'Flow: a steady pulsing tone.' } : { flow: false, text: 'Silence: no flow in this vessel.' };
   }
   if (target.kind === 'aneurysm') {
+    if (flows.has('aneurysm') && state.clip) return { flow: true, text: 'Flow: the sac still fills. The clip has not closed the whole neck.' };
     return flows.has('aneurysm') ? { flow: true, text: 'Flow: the sac is filling.' } : { flow: false, text: 'Silence: the sac is not filling.' };
   }
   return { flow: false, text: 'Silence: this is not a vessel.' };
@@ -211,7 +220,10 @@ export function dopplerReading(state: FieldState, target: Target): DopplerReadin
 export function bleedRate(state: FieldState): number {
   let rate = 0;
   for (const o of state.oozes) rate += o.brisk ? RULES.bleedBriskMlPerSecond : RULES.bleedOozeMlPerSecond;
-  if (state.ruptured && !state.clip) rate += RULES.bleedRuptureMlPerSecond;
+  if (state.ruptured) {
+    const leak = state.clip ? (evaluateClip(state.clip).closed ? 0 : RULES.clip.leakFraction) : 1;
+    rate += RULES.bleedRuptureMlPerSecond * leak;
+  }
   return state.tempClip.on ? rate * RULES.tempClipBleedFactor : rate;
 }
 
@@ -333,7 +345,7 @@ function applyClip(state: FieldState, target: Target): Result {
   if (state.neckFreed < RULES.neckFreedForClip) {
     return done(state, event('clip-refused', 'warn', 'Free the neck first: the blades need room on both sides.'));
   }
-  return done({ ...state, clip: { ...state.clipSetup, appliedAt: state.time } }, event('clip-on', 'good', 'Clip applied. Check it before you finish.'));
+  return done({ ...state, checks: [], clip: { ...state.clipSetup, appliedAt: state.time } }, event('clip-on', 'good', 'Clip applied. Check it with the Doppler and ICG before you finish.'));
 }
 
 function click(state: FieldState, tool: ToolId, target: Target): Result {
@@ -351,8 +363,10 @@ function click(state: FieldState, tool: ToolId, target: Target): Result {
     case 'icg': {
       const view = state.view === 'icg' ? 'white' : 'icg';
       const checked = view === 'icg' && state.clip !== null && !state.tempClip.on;
+      let checks = checked ? addOnce(state.checks, 'icg-checked') : state.checks;
+      if (checked && state.clip && evaluateClip(state.clip).icaNarrowingPct >= RULES.clip.noticeNarrowingPct) checks = addOnce(checks, 'ica-narrowed');
       return done(
-        { ...state, view, checks: checked ? addOnce(state.checks, 'icg-checked') : state.checks },
+        { ...state, view, checks },
         event('view', 'info', view === 'icg' ? 'Fluorescence view on.' : 'White-light view.'),
       );
     }
@@ -365,8 +379,8 @@ function click(state: FieldState, tool: ToolId, target: Target): Result {
       // After clipping: flow in the posterior communicating artery and silence in the sac are the checks that matter.
       let checks = state.checks;
       if (state.clip && !state.tempClip.on) {
-        if (target.kind === 'vessel' && target.id === 'pcom' && reading.flow) checks = addOnce(checks, 'pcom-flow');
-        if (target.kind === 'aneurysm' && !reading.flow) checks = addOnce(checks, 'sac-silent');
+        if (target.kind === 'vessel' && target.id === 'pcom') checks = addOnce(checks, reading.flow ? 'pcom-flow' : 'pcom-silent');
+        if (target.kind === 'aneurysm') checks = addOnce(checks, reading.flow ? 'sac-fills' : 'sac-silent');
       }
       return done({ ...state, checks }, event('doppler', reading.flow ? 'good' : 'info', reading.text));
     }
@@ -415,6 +429,7 @@ function bipolar(state: FieldState, target: Target, dt: number): Result {
 
 function hold(state: FieldState, tool: ToolId, target: Target, dt: number): Result {
   if (dt <= 0 || !TOOL_BY_ID[tool].hold) return done(state);
+  if (tool === 'doppler') return click(state, 'doppler', target);
   if (tool === 'suction') return suction(state, target, dt);
   if (tool === 'bipolar') return bipolar(state, target, dt);
   return done(state);
@@ -457,6 +472,6 @@ export function act(state: FieldState, action: Action): Result {
     case 'setClip':
       return done(setClip(state, action));
     case 'removeClip':
-      return state.clip ? done({ ...state, clip: null }, event('clip-off', 'info', 'Clip removed.')) : done(state);
+      return state.clip ? done({ ...state, checks: [], clip: null }, event('clip-off', 'info', 'Clip removed.')) : done(state);
   }
 }

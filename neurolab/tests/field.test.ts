@@ -15,6 +15,7 @@ import {
   type FieldState,
   type Target,
 } from '../src/procedure/field';
+import { goodClip } from '../src/physics/clipEval';
 import { TOOLS, toolForKey, type ToolId } from '../src/tools/tools';
 
 const ORDER = RULES.arachnoidOrder;
@@ -55,8 +56,8 @@ describe('the tool table', () => {
     expect(toolForKey('a')).toBeUndefined();
   });
 
-  it('holds only suction and bipolar down; the rest are clicks', () => {
-    expect(TOOLS.filter((t) => t.hold).map((t) => t.id)).toEqual(['suction', 'bipolar']);
+  it('holds suction, bipolar and the Doppler probe down; the rest are clicks', () => {
+    expect(TOOLS.filter((t) => t.hold).map((t) => t.id)).toEqual(['suction', 'bipolar', 'doppler']);
   });
 });
 
@@ -298,7 +299,7 @@ describe('flow, ICG and Doppler', () => {
   });
 
   it('stops filling the sac once a clip is across the neck, and keeps the parent vessels', () => {
-    const clipped = run(neckFree(), use('clip', NECK)).state;
+    const clipped = run(neckFree(), { type: 'setClip', ...goodClip() }, use('clip', NECK)).state;
     const f = flowing(clipped);
     expect(f.has('aneurysm')).toBe(false);
     expect(f.has('ica')).toBe(true);
@@ -380,7 +381,7 @@ describe('a scripted learner', () => {
     expect(state.oozes).toHaveLength(0);
     state = run(state, use('tempClip', ICA)).state;
     state = tick(state, 30);
-    state = run(state, use('clip', NECK), use('tempClip', ICA)).state;
+    state = run(state, { type: 'setClip', ...goodClip() }, use('clip', NECK), use('tempClip', ICA)).state;
     expect(state.clip).not.toBeNull();
     expect(state.tempClip.totalSeconds).toBe(30);
     expect(state.injuries).toEqual([]);

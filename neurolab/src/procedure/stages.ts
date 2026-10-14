@@ -130,13 +130,13 @@ export const STAGES: readonly Stage[] = [
       {
         id: 'sac-silent',
         text: 'Doppler: the aneurysm is silent',
-        hint: 'Release the temporary clip if it is on. Pick the Doppler (8) and click the aneurysm: silence means it is no longer filling.',
+        hint: 'Release the temporary clip if it is on. Pick the Doppler (8) and hold it on the aneurysm: silence means it is no longer filling.',
         done: (s) => s.checks.includes('sac-silent'),
       },
       {
         id: 'pcom-flow',
         text: 'Doppler: the PCom still has flow',
-        hint: 'Click the posterior communicating artery with the Doppler: a pulsing tone means it is open.',
+        hint: 'Hold the Doppler on the posterior communicating artery: a pulsing tone means it is open.',
         done: (s) => s.checks.includes('pcom-flow'),
       },
       {

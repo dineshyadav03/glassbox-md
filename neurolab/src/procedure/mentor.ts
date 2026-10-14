@@ -20,9 +20,27 @@ export interface Advice {
   readonly why: string;
 }
 
+/** What the learner has found wrong with the clip so far (only what they have checked), as advice, or null. */
+function clipProblem(state: FieldState): string | null {
+  if (state.checks.includes('sac-fills')) {
+    return 'The sac still fills: the clip has not closed the whole neck. Remove it (Backspace) and place it deeper, or turned along the carotid.';
+  }
+  if (state.checks.includes('pcom-silent')) {
+    return 'The PCom has no flow: the clip is pinching it. Remove the clip (Backspace) and turn it away from the PCom.';
+  }
+  if (state.checks.includes('ica-narrowed')) {
+    return 'The carotid looks narrowed under ICG: the blades reach too far into it. Remove the clip (Backspace) and place it less deep.';
+  }
+  return null;
+}
+
 /** The standing hint for the first thing left to do, with why the step matters. */
 export function adviceNow(state: FieldState): Advice {
   const next = nextTask(state);
+  const problem = state.clip && !state.tempClip.on ? clipProblem(state) : null;
+  if (problem && next && next.stage.number === 6) {
+    return { eyebrow: `Step ${next.stage.number} of ${STAGES.length}`, title: next.stage.title, hint: problem, why: next.stage.why };
+  }
   if (!next) {
     return {
       eyebrow: 'All six steps done',

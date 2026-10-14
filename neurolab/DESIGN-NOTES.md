@@ -43,6 +43,27 @@ sees. The aneurysm now points mostly outward (lateral) and down, with only a lit
 What a tool does not do yet: bleeding has no effect on vitals (M4); the clip is recorded but not evaluated (M5); the
 Doppler gives a text reading, not a tone (M5).
 
+## Judging the clip (M5)
+
+`physics/clipEval.ts`, with every threshold in `RULES.clip`. A clip is a bar across the neck, turned about the neck's
+axis and set to a blade depth. The angles are worked out from the anatomy, so a config edit moves them: the angle at
+which the bar lies along the parent artery (the ideal), and the angles at which a deep clip points at the PCom or at the
+anterior choroidal artery. With the shipped anatomy those are about -56, -17 and +87 degrees.
+
+| Judgement | Rule |
+|---|---|
+| Neck closed | less than 0.5 mm left open. Straight clip needs depth 0.7, curved 0.8; turned off the artery by more than 35 (straight) or 55 (curved) degrees leaves up to 40% of the neck open |
+| Carotid narrowed | blades deeper than 0.9 reach into it (up to 60%); a large turn adds up to 40% (half for a curved clip) |
+| Branch pinched | depth at least 0.8 and the bar within 25 degrees of the branch |
+| Beyond a blocked carotid | at 70% narrowing the arteries beyond lose flow |
+| Rupture still bleeding | a clipped but unclosed sac leaks at 30% of the free rate |
+
+The checks the learner makes (Doppler on the sac and the PCom, ICG) record what they found, good or bad, and the mentor
+only comments on what has been checked: it does not announce the result of a clip nobody has looked at. Removing the
+clip, or placing another, clears them. The Doppler is now held on a vessel; it makes one short whoosh per heartbeat
+while the probe is on a vessel with flow, and nothing otherwise (synthesised, no audio files; tested with a fake audio
+context, not by ear).
+
 ## Vitals and bleeding (M4)
 
 All in `config/rules.ts` (`bleed*`, `pool*`, `vitals`), invented.

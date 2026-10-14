@@ -21,7 +21,7 @@ export const TOOLS: readonly ToolDef[] = [
   { id: 'spatula', name: 'Spatula', key: '5', hold: false, hint: 'Click to hold the lobes apart, as far as the cut membrane allows. Click again to release.' },
   { id: 'clip', name: 'Clip', key: '6', hold: false, hint: 'Click the freed neck to apply the clip. A and D turn it, W and S set blade depth, V swaps straight and curved.' },
   { id: 'icg', name: 'ICG', key: '7', hold: false, hint: 'Click to switch the fluorescence view: it lights the vessels that have blood flowing in them.' },
-  { id: 'doppler', name: 'Doppler', key: '8', hold: false, hint: 'Click a vessel to listen for flow. Blood flowing gives a pulsing tone; none gives silence.' },
+  { id: 'doppler', name: 'Doppler', key: '8', hold: true, hint: 'Hold the probe on a vessel to listen for flow. Blood flowing gives a pulsing tone; none gives silence.' },
   { id: 'endoscope', name: 'Endoscope', key: '9', hold: false, hint: 'Click to open a small view from behind the aneurysm.' },
   { id: 'tempClip', name: 'Temporary clip', key: '0', hold: false, hint: 'Click the carotid to close it for a short time and slow bleeding. Click again to release. The clock runs.' },
 ];

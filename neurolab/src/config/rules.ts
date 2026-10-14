@@ -70,6 +70,31 @@ export const RULES = {
     highHr: 120,
   },
 
+  /** How a clip is judged (see physics/clipEval.ts). Depths are fractions of the neck; angles are degrees. */
+  clip: {
+    neededDepthStraight: 0.7,
+    neededDepthCurved: 0.8,
+    toleranceStraightDeg: 35,
+    toleranceCurvedDeg: 55,
+    /** Fraction of the neck left open when the clip is turned all the way off the artery's line. */
+    misalignedResidual: 0.4,
+    /** Deeper than this the blades start to reach into the carotid. */
+    intrusionDepth: 0.9,
+    intrusionNarrowing: 60,
+    misalignedNarrowing: 40,
+    /** The neck counts as closed when less than this is left open, mm. */
+    closedResidualMm: 0.5,
+    /** A deep clip turned within this of a branch pinches it. */
+    pinchDepth: 0.8,
+    pinchAngleDeg: 25,
+    /** The carotid is judged blocked, and the arteries beyond it lose flow, at this narrowing, percent. */
+    blockNarrowingPct: 70,
+    /** The mentor mentions narrowing from this, percent. */
+    noticeNarrowingPct: 30,
+    /** Bleeding from a ruptured sac that is clipped but not closed, as a fraction of the free rate. */
+    leakFraction: 0.3,
+  },
+
   /** Aneurysm clip limits. */
   clipAngleLimitDeg: 90,
   clipAngleStepDeg: 10,

@@ -3,6 +3,7 @@ import { RULES } from '../src/config/rules';
 import { act, initialField, tick, type Action, type FieldEvent, type FieldState, type Target } from '../src/procedure/field';
 import { adviceNow, notesFor, type MentorNote } from '../src/procedure/mentor';
 import { STAGES, allStagesDone, currentStage, nextTask, stageViews } from '../src/procedure/stages';
+import { goodClip } from '../src/physics/clipEval';
 import type { ToolId } from '../src/tools/tools';
 
 const NONE: Target = { kind: 'none' };
@@ -51,7 +52,7 @@ const STEP4: Action[] = [
   use('dissector', NECK),
 ];
 type Step = Action | { wait: number };
-const STEP5: Step[] = [use('tempClip', ICA), { type: 'setClip', variant: 'straight', angleDeg: 10, depth: 0.7 }, use('clip', NECK), { wait: 20 }, use('tempClip', ICA)];
+const STEP5: Step[] = [use('tempClip', ICA), { type: 'setClip', ...goodClip() }, use('clip', NECK), { wait: 20 }, use('tempClip', ICA)];
 const STEP6: Action[] = [use('doppler', { kind: 'aneurysm', part: 'dome' }), use('doppler', vessel('pcom')), use('icg', NONE)];
 
 const statusOf = (state: FieldState): string[] => stageViews(state).map((v) => v.status);
@@ -155,7 +156,7 @@ describe('identifying', () => {
 });
 
 describe('the checks after clipping', () => {
-  const clipped = (): FieldState => play(initialField(), ...STEP1, ...STEP4.slice(2), use('clip', NECK)).state;
+  const clipped = (): FieldState => play(initialField(), ...STEP1, ...STEP4.slice(2), { type: 'setClip', ...goodClip() }, use('clip', NECK)).state;
 
   it('count only once a clip is on and the temporary clip is off', () => {
     expect(play(initialField(), use('doppler', vessel('pcom'))).state.checks).toEqual([]);
