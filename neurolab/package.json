@@ -1,0 +1,27 @@
+{
+  "name": "glassbox-neurolab-simulator",
+  "private": true,
+  "version": "0.0.1",
+  "type": "module",
+  "description": "Browser-based EDUCATIONAL aneurysm-clipping (brain surgery) simulator. Not clinical training, not a medical device, not medical advice.",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "build:standalone": "tsc --noEmit && vite build --base=/ --outDir dist-standalone --emptyOutDir",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "preview": "vite preview"
+  },
+  "devDependencies": {
+    "@types/three": "^0.186.0",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.4",
+    "vitest": "^5.0.4"
+  },
+  "dependencies": {
+    "three": "~0.186.1"
+  }
+}

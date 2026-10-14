@@ -22,11 +22,12 @@ confirming calls `case_store.confirm_case`, which records a real
 timestamp in `data/cases/cases.db` and is what a reopened past case's
 `clinician_confirmed` flag actually reflects.
 
-Cath-lab simulator: the educational PCI simulator (`simulator/`, built to
-`simulator/dist`) is served by this same app at `/cathlab/` (see `cathlab.py`),
-behind the same login, and offered as a third choice in `on_chat_start`. It is
-a side trip: it is not connected to the pipeline, reads no case, and no report
-links to it. If it has not been built, the menu says how instead of 404ing.
+Simulators: the educational PCI simulator (`simulator/`, built to
+`simulator/dist`) and the brain-surgery one (`neurolab/`) are served by this
+same app at `/cathlab/` and `/neurolab/` (see `labs.py`), behind the same
+login, and offered as extra choices in `on_chat_start`. They are side trips: they
+are not connected to the pipeline, read no case, and no report links to them. If
+one has not been built, the menu says how instead of 404ing.
 
 Case persistence + browse: every completed case is saved via
 `case_store.save_case` right where its report is first shown (only the
@@ -70,7 +71,7 @@ from dotenv import load_dotenv
 from chainlit.config import config as chainlit_config
 from chainlit.server import app as chainlit_server_app
 
-from glassbox_md import auth, case_store, cathlab, decision_layer
+from glassbox_md import auth, case_store, cathlab, decision_layer, neurolab
 from glassbox_md.agents.diagnostic_prediction import backend_description
 from glassbox_md.case_store import CaseRecord
 from glassbox_md.origin_guard import OriginGuard
@@ -102,20 +103,20 @@ def _login_token_is_valid(token: str) -> bool:
     return True
 
 
-# The cath-lab simulator (simulator/, built to simulator/dist) is served by this same app at
-# /cathlab/, behind the same login when login is configured. It is not connected to the diagnostic
-# pipeline. Nothing is mounted if it has not been built; the start menu then says how to build it.
-def _mount_cathlab() -> bool:
+# The educational simulators (cath lab: simulator/, brain surgery: neurolab/; each built to its own dist/) are
+# served by this same app at /cathlab/ and /neurolab/, behind the same login when login is configured. They
+# are not connected to the diagnostic pipeline. Nothing is mounted for a lab that has not been built; the
+# start menu then says how to build it.
+def _mount_lab(mount) -> bool:
     if _auth_settings.enabled:
         from chainlit.auth import get_token_from_cookies
 
-        return cathlab.mount_cathlab(
-            chainlit_server_app, token_from_cookies=get_token_from_cookies, is_valid=_login_token_is_valid
-        )
-    return cathlab.mount_cathlab(chainlit_server_app)
+        return mount(chainlit_server_app, token_from_cookies=get_token_from_cookies, is_valid=_login_token_is_valid)
+    return mount(chainlit_server_app)
 
 
-_cathlab_mounted = _mount_cathlab()
+_cathlab_mounted = _mount_lab(cathlab.mount_cathlab)
+_neurolab_mounted = _mount_lab(neurolab.mount_neurolab)
 
 
 if _auth_settings.enabled:
@@ -170,8 +171,8 @@ async def start() -> None:
 
     choice = await _ask_start_choice()
     # The simulator is a side trip, not a case: show where it is, then offer the same choices again.
-    while choice and choice["name"] == "open_cathlab":
-        await cl.Message(content=cathlab.menu_message(_cathlab_mounted)).send()
+    while choice and choice["name"] in _SIMULATOR_MESSAGES:
+        await cl.Message(content=_SIMULATOR_MESSAGES[choice["name"]]()).send()
         choice = await _ask_start_choice()
 
     # None on timeout (raise_on_timeout defaults to False) -- treated the
@@ -184,13 +185,20 @@ async def start() -> None:
     await _start_new_case_upload()
 
 
+_SIMULATOR_MESSAGES = {
+    "open_cathlab": lambda: cathlab.menu_message(_cathlab_mounted),
+    "open_neurolab": lambda: neurolab.menu_message(_neurolab_mounted),
+}
+
+
 async def _ask_start_choice() -> dict[str, Any] | None:
     return await cl.AskActionMessage(
-        content="Start a new case, look at a past one, or open the educational cath-lab simulator?",
+        content="Start a new case, look at a past one, or open an educational simulator?",
         actions=[
             cl.Action(name="upload_new", payload={}, label="📤 Upload a new case"),
             cl.Action(name="view_past", payload={}, label="📋 Browse past cases"),
             cl.Action(name="open_cathlab", payload={}, label="🫀 Cath lab simulator (educational)"),
+            cl.Action(name="open_neurolab", payload={}, label="🧠 Brain surgery simulator (educational)"),
         ],
         timeout=90,
     ).send()

@@ -10,6 +10,7 @@ on:
       - requirements.txt
       - requirements.lock.txt
       - simulator/package-lock.json
+      - neurolab/package-lock.json
       - .github/workflows/security-audit.yml
   workflow_dispatch:
 
@@ -47,8 +48,13 @@ jobs:
   # The simulator's npm dependencies (Three.js, Vite, Vitest, TypeScript). Only high and critical advisories
   # fail the job; the build tools run on a developer machine or in CI and never ship to the browser.
   npm-audit:
+    name: npm-audit (${{ matrix.lab }})
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        lab: [simulator, neurolab]
     steps:
       - uses: actions/checkout@v7
 
@@ -56,6 +62,6 @@ jobs:
         with:
           node-version: "22"
 
-      - name: Audit the simulator's locked dependencies
+      - name: Audit the locked dependencies
         run: npm audit --audit-level=high
-        working-directory: simulator
+        working-directory: ${{ matrix.lab }}

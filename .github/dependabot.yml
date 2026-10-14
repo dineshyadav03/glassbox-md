@@ -22,3 +22,12 @@ updates:
     groups:
       simulator-dev-tools:
         dependency-type: development
+
+  # The brain-surgery simulator (neurolab/), same arrangement.
+  - package-ecosystem: npm
+    directory: /neurolab
+    schedule:
+      interval: weekly
+    groups:
+      neurolab-dev-tools:
+        dependency-type: development
