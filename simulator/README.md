@@ -31,8 +31,21 @@ menu. It is **not connected to the diagnostic pipeline**: the pipeline reasons a
 this simulates a procedure with made-up physiology, so it reads no case and no patient report links to it;
 mixing the two would blur what each one claims.
 
-The design follows a public specification-style prompt (Vite + strict TypeScript + Three.js + Vitest, simulation
-logic in pure functions, every constant in one config file, 1 scene unit = 1 mm) and was built with Claude Code.
+Built with Claude Code in Vite, strict TypeScript, Three.js and Vitest, with the rules in pure functions and every
+constant in one config file (1 scene unit = 1 mm).
+
+**What is this project's own work.**
+
+- **A case you can prove is finishable.** The procedure engine is a pure `tick`/`act` pair, and a scripted learner plays
+  all six steps through it in a test and must score Excellent, so a rule that made the case impossible fails the build.
+- **A demo that is an input source, not a trick.** The autopilot answers each moment with the same held controls and
+  button presses a person produces, and its result is checked at three frame rates.
+- **An X-ray screen driven by the same model as the 3D view,** so foreshortening, the lesion's pinch, a tear's filling
+  defect and stent struts come from geometry, not artwork; a second final view must differ by 20 degrees to count.
+- **Honest numbers.** Every invented constant and judgment call is written down in [`DESIGN-NOTES.md`](DESIGN-NOTES.md), and
+  the debrief's thresholds are labelled teaching choices, not standards.
+- **Served from inside the Glassbox app,** behind its login, with a test that serves the real build and every file it
+  loads, so a wrong path cannot ship as a blank page.
 
 ## Run it
 
