@@ -6,6 +6,7 @@ import { adviceNow, notesFor, type MentorNote } from '../procedure/mentor';
 import { stageViews } from '../procedure/stages';
 import { buildBrainScene } from '../scene/brainScene';
 import { createMicroscope } from '../scene/microscope';
+import { createMonitor } from './monitor';
 import { TOOLS, TOOL_BY_ID, toolForKey, type ToolId } from '../tools/tools';
 import { cursorFor, iconElement } from './cursors';
 import { fieldRows, type Row } from './fieldModel';
@@ -124,6 +125,8 @@ export function renderLabScreen(root: HTMLElement, onLeave: () => void): void {
     adviceWhy.textContent = `Why: ${advice.why}`;
     logList.replaceChildren(...log.slice(-LOG_LENGTH).reverse().map((n) => node('li', `tone-${n.tone}`, n.text)));
   };
+
+  const monitor = createMonitor();
 
   const readoutPanel = node('section', 'panel readout');
   readoutPanel.append(node('h2', undefined, 'The field'));
@@ -253,6 +256,7 @@ export function renderLabScreen(root: HTMLElement, onLeave: () => void): void {
       pressed = true;
       if (!TOOL_BY_ID[tool].hold) apply({ type: 'click', tool, target });
     };
+    scope.beatsPerMinute = () => field.vitals.hr;
     scope.onToolUp = () => {
       pressed = false;
     };
@@ -270,6 +274,11 @@ export function renderLabScreen(root: HTMLElement, onLeave: () => void): void {
       shownOpening += (field.retraction - shownOpening) * (1 - Math.exp(-dt * 4));
       if (Math.abs(field.retraction - shownOpening) < 0.002) shownOpening = field.retraction;
       scene.setFissureOpening(shownOpening);
+      scene.setBlood(field.pooled, field.ruptured && !field.clip, field.time);
+      monitor.update(
+        { vitals: field.vitals, eblMl: field.ebl, seconds: field.time, tempClipOn: field.tempClip.on, tempClipSeconds: field.tempClip.seconds },
+        dt,
+      );
       statusLeft = Math.max(0, statusLeft - dt);
       if (statusLeft === 0 && status.textContent) {
         status.textContent = '';
@@ -318,7 +327,7 @@ export function renderLabScreen(root: HTMLElement, onLeave: () => void): void {
   const left = node('aside', 'lab-left');
   left.append(stepsPanel);
   const right = node('aside', 'lab-right');
-  right.append(mentorPanel, readoutPanel);
+  right.append(monitor.root, mentorPanel, readoutPanel);
   const body = node('div', 'lab-body');
   body.append(left, frame, right);
   const lab = node('div', 'lab');

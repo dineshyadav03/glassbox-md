@@ -9,6 +9,7 @@ import type { NerveId, VesselId } from '../anatomy/vessels';
 import type { ToolId } from '../tools/tools';
 import { TOOL_BY_ID } from '../tools/tools';
 import { describeTarget } from '../anatomy/targets';
+import { baselineVitals, stepVitals, type Vitals } from '../physics/vitals';
 
 export type Target =
   | { readonly kind: 'none' }
@@ -75,6 +76,9 @@ export interface FieldState {
   readonly oozes: readonly Ooze[];
   /** Blood lying in the field, in pool units. */
   readonly pooled: number;
+  /** Estimated blood lost so far, millilitres. */
+  readonly ebl: number;
+  readonly vitals: Vitals;
   /** Seconds of bipolar heat on each vessel or nerve. */
   readonly thermal: Readonly<Record<string, number>>;
   readonly injuries: readonly Injury[];
@@ -110,6 +114,7 @@ export type EventCode =
   | 'temp-on'
   | 'temp-off'
   | 'temp-refused'
+  | 'obstructed'
   | 'noop';
 
 export interface FieldEvent {
@@ -144,6 +149,8 @@ export function initialField(): FieldState {
     ruptured: false,
     oozes: [],
     pooled: 0,
+    ebl: 0,
+    vitals: baselineVitals(),
     thermal: {},
     injuries: [],
     tempClip: { on: false, seconds: 0, totalSeconds: 0 },
@@ -200,12 +207,32 @@ export function dopplerReading(state: FieldState, target: Target): DopplerReadin
 
 // --- time ---------------------------------------------------------------------------------------------------
 
-/** Move time on: the clocks of the temporary clip and of the retraction run. */
+/** How fast blood is being lost right now, millilitres per second. */
+export function bleedRate(state: FieldState): number {
+  let rate = 0;
+  for (const o of state.oozes) rate += o.brisk ? RULES.bleedBriskMlPerSecond : RULES.bleedOozeMlPerSecond;
+  if (state.ruptured && !state.clip) rate += RULES.bleedRuptureMlPerSecond;
+  return state.tempClip.on ? rate * RULES.tempClipBleedFactor : rate;
+}
+
+/** Blood fills the field so the surgeon cannot see to work. */
+export function isObstructed(state: FieldState): boolean {
+  return state.pooled >= RULES.obstructedAtPool;
+}
+
+const OBSTRUCTED = 'You cannot see: blood fills the field. Clear it with suction first.';
+
+/** Move time on: the clocks run, blood is lost and pools, and the vital signs follow. */
 export function tick(state: FieldState, dt: number): FieldState {
   const step = Math.max(0, dt);
+  const lost = bleedRate(state) * step;
+  const ebl = state.ebl + lost;
   return {
     ...state,
     time: state.time + step,
+    ebl,
+    pooled: Math.min(RULES.poolMax, state.pooled + lost * RULES.poolPerMl),
+    vitals: stepVitals(state.vitals, ebl, state.tempClip.on, state.tempClip.seconds, step),
     retractionSeconds: state.retraction > 0 ? state.retractionSeconds + step : state.retractionSeconds,
     tempClip: state.tempClip.on
       ? { on: true, seconds: state.tempClip.seconds + step, totalSeconds: state.tempClip.totalSeconds + step }
@@ -273,6 +300,7 @@ function dissector(state: FieldState, target: Target): Result {
     return { state: touched.state, events: [event('rough', 'warn', 'Do not work on the dome. Free the neck, from the carotid side.')] };
   }
   if (target.kind !== 'aneurysm') return done(state, event('noop', 'info', 'The dissector frees the aneurysm neck. Click the neck.'));
+  if (isObstructed(state)) return done(state, event('obstructed', 'warn', OBSTRUCTED));
   if (!state.cut.includes('arach-ica') || state.retraction < RULES.retractionNeededForNeck) {
     return done(state, event('neck-blocked', 'warn', 'You cannot reach the neck yet: open the fissure and cut the membrane over the carotid.'));
   }
@@ -300,6 +328,7 @@ function applyClip(state: FieldState, target: Target): Result {
   if (target.kind !== 'aneurysm' || target.part !== 'neck') {
     return done(state, event('clip-refused', 'warn', 'The clip goes across the neck, not the dome. Click the neck.'));
   }
+  if (isObstructed(state)) return done(state, event('obstructed', 'warn', OBSTRUCTED));
   if (state.clip) return done(state, event('clip-refused', 'warn', 'A clip is already on. Remove it (Backspace) to place it again.'));
   if (state.neckFreed < RULES.neckFreedForClip) {
     return done(state, event('clip-refused', 'warn', 'Free the neck first: the blades need room on both sides.'));

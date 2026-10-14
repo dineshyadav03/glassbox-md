@@ -60,13 +60,20 @@ export function notesFor(prev: FieldState, next: FieldState, events: readonly Fi
       });
     } else if (e.code === 'cut-injury' || e.code === 'burned') {
       notes.push({ tone: 'bad', text: `${e.text} Injuries are recorded and will count at the debrief.` });
-    } else if (e.code === 'neck-blocked' || e.code === 'bound' || e.code === 'wrong-order' || e.code === 'clip-refused') {
+    } else if (e.code === 'neck-blocked' || e.code === 'obstructed' || e.code === 'bound' || e.code === 'wrong-order' || e.code === 'clip-refused') {
       notes.push({ tone: 'warn', text: e.text });
     }
   }
 
   if (crossed(prev.domeStress, next.domeStress, 0.6) && !next.ruptured) {
     notes.push({ tone: 'warn', text: 'You are straining the dome. Work on the neck, from the carotid side, not on the dome.' });
+  }
+  const below = (before: number, after: number, line: number): boolean => before >= line && after < line;
+  if (below(prev.vitals.sbp, next.vitals.sbp, RULES.vitals.lowSbp)) {
+    notes.push({ tone: 'bad', text: 'Blood pressure is falling from blood loss. Control the bleeding first: temporary clip, then the clip.' });
+  }
+  if (below(prev.vitals.mep, next.vitals.mep, RULES.vitals.lowMep)) {
+    notes.push({ tone: 'bad', text: 'The motor evoked potentials are falling. Release the temporary clip if it is on, and keep the pressure up.' });
   }
   if (next.tempClip.on && crossed(prev.tempClip.seconds, next.tempClip.seconds, RULES.tempClipWarnSeconds)) {
     notes.push({ tone: 'warn', text: 'The temporary clip has been on for three minutes. Plan to release it soon.' });

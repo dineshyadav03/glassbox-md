@@ -7,6 +7,7 @@
  */
 import * as THREE from 'three';
 import { ANATOMY, COLOURS } from '../config/anatomy';
+import { RULES } from '../config/rules';
 import { aneurysmGeometry } from '../anatomy/aneurysm';
 import { labelAnchors, type LabelAnchor } from '../anatomy/labels';
 import { buildLobe, lobeSurfaceY } from '../anatomy/lobe';
@@ -54,6 +55,8 @@ export interface BrainScene {
   setAppliedClip(clip: ClipSetup | null): void;
   /** Draw the small bleeding points; `on` is a vessel id or 'neck'. */
   setOozes(oozes: readonly { readonly id: string; readonly on: string }[]): void;
+  /** Show the pool of blood (in pool units) and, while a rupture is uncontrolled, the jet from the dome. */
+  setBlood(pooled: number, spurting: boolean, seconds: number): void;
   /** Where the endoscope sits (behind the aneurysm) and what it looks at (the neck). */
   readonly endoscopeView: { readonly position: Vec3; readonly target: Vec3 };
   dispose(): void;
@@ -214,9 +217,24 @@ export function buildBrainScene(config: Config = ANATOMY, opening = 1): BrainSce
   const appliedClip = new THREE.Group();
   appliedClip.name = 'aneurysm-clip';
   const ooze = new Map<string, THREE.Mesh>();
+  const poolMaterial = new THREE.MeshStandardMaterial({ color: 0x7a0c10, roughness: 0.15, transparent: true, opacity: 0.62, depthWrite: false, side: THREE.DoubleSide });
+  // A box one millimetre tall, scaled to the depth of the blood: seen from the front it is a red band rising in the field.
+  const pool = new THREE.Mesh(new THREE.BoxGeometry(70, 1, 44), poolMaterial);
+  pool.position.set(-4, -19, -46);
+  pool.visible = false;
+  pool.name = 'blood-pool';
+  const drop = new THREE.SphereGeometry(0.55, 8, 6);
+  const spray = new THREE.Group();
+  spray.visible = false;
+  const drops: THREE.Mesh[] = [];
+  for (let i = 0; i < 24; i++) {
+    const d = new THREE.Mesh(drop, blood);
+    drops.push(d);
+    spray.add(d);
+  }
   const oozeGeometry = new THREE.SphereGeometry(1.1, 14, 10);
 
-  root.add(tempClipMesh, appliedClip, frontalGroup, temporalGroup, backdrop, ...Object.values(vessels), ...Object.values(nerves), sacLive.mesh, bleb, ...arachnoid.values());
+  root.add(tempClipMesh, appliedClip, pool, spray, frontalGroup, temporalGroup, backdrop, ...Object.values(vessels), ...Object.values(nerves), sacLive.mesh, bleb, ...arachnoid.values());
 
   const fieldBounds = new THREE.Box3();
   for (const mesh of [...Object.values(vessels), ...Object.values(nerves), sacLive.mesh, bleb]) fieldBounds.union(new THREE.Box3().setFromObject(mesh));
@@ -331,6 +349,24 @@ export function buildBrainScene(config: Config = ANATOMY, opening = 1): BrainSce
         root.add(mesh);
       }
     },
+    setBlood(pooled: number, spurting: boolean, seconds: number): void {
+      pool.visible = pooled > 0.3;
+      const depth = Math.max(0.01, Math.min(RULES.poolMax, pooled) * 1.3);
+      pool.scale.y = depth;
+      pool.position.y = -19 + depth / 2;
+      spray.visible = spurting;
+      if (!spurting) return;
+      drops.forEach((d, i) => {
+        const phase = (seconds * 1.7 + i / drops.length) % 1;
+        // A fixed fan of directions, so the jet is the same every time (no random numbers).
+        const angle = i * 2.399;
+        const vx = Math.cos(angle) * 5 + 4;
+        const vz = Math.sin(angle) * 5;
+        const t = phase * 2.2;
+        d.position.set(an.domeCentre[0] + vx * t, an.domeCentre[1] + 16 * t - 9 * t * t, an.domeCentre[2] + vz * t);
+        d.scale.setScalar(1 - phase * 0.55);
+      });
+    },
     endoscopeView: {
       position: [an.domeCentre[0] + an.axis[0] * (an.domeRadius + 13), an.domeCentre[1] + an.axis[1] * (an.domeRadius + 13), an.domeCentre[2] + an.axis[2] * (an.domeRadius + 13)],
       target: an.neckCentre,
@@ -341,6 +377,8 @@ export function buildBrainScene(config: Config = ANATOMY, opening = 1): BrainSce
       });
       for (const material of [brainMaterial, arteryMaterial, ...arteryMaterials, aneurysmMaterial, nerveMaterial, membraneMaterial, steel, backdropMaterial, titanium, blood]) material.dispose();
       oozeGeometry.dispose();
+      drop.dispose();
+      poolMaterial.dispose();
     },
   };
   scene.setFissureOpening(opening);

@@ -74,3 +74,12 @@
   .lab-left { border-top: 1px solid #2c2340; }
   .lab-dock { position: sticky; bottom: 0; z-index: 5; }
 }
+
+.monitor canvas { display: block; width: 100%; height: auto; background: #050a08; border-radius: 6px; border: 1px solid #1d2b25; }
+.monitor.alarm { border-color: #7a2a24; }
+.tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(78px, 1fr)); gap: 6px; margin-top: 8px; }
+.tile { padding: 4px 6px; border-radius: 6px; background: #0e0a15; border: 1px solid #2a2140; display: grid; }
+.tile-label { font-size: 11px; color: #9d95b8; }
+.tile-value { font: 600 15px/1.2 ui-monospace, 'SFMono-Regular', Consolas, monospace; color: #8fe8b4; }
+.monitor.alarm .tile-value { color: #ffb3a8; }
+.monitor-banner { margin: 6px 0 0; min-height: 1.3em; color: #ff8b7a; font-weight: 600; font-size: 12.5px; }

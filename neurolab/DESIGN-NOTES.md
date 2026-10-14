@@ -43,6 +43,24 @@ sees. The aneurysm now points mostly outward (lateral) and down, with only a lit
 What a tool does not do yet: bleeding has no effect on vitals (M4); the clip is recorded but not evaluated (M5); the
 Doppler gives a text reading, not a tone (M5).
 
+## Vitals and bleeding (M4)
+
+All in `config/rules.ts` (`bleed*`, `pool*`, `vitals`), invented.
+
+| Rule | Value |
+|---|---|
+| Blood loss | 0.03 ml/s from a small ooze, 0.4 ml/s from a cut artery, 10 ml/s from a rupture that has no clip |
+| Temporary clip on the carotid | every leak falls to 20% |
+| Clip across the neck | stops the rupture bleeding (how well it is placed is judged in M5) |
+| Pool | 0.5 pool unit per ml, at most 20; suction clears 4 units/s, so it keeps up with a clamped rupture (1 unit/s) but not a free one (5 units/s) |
+| Field hidden | at 8 pool units the dissector and the clip are refused until it is suctioned |
+| Vitals | baseline HR 72, BP 118/74, SpO2 99; they move toward HR +60, SBP -65, DBP -35, SpO2 -9 as loss approaches 1500 ml, with a 20 s lag |
+| MEP | falls 0.25%/s after 90 s on the temporary clip, recovers 0.4%/s once it is off and the pressure is adequate; low pressure also lowers it |
+| Alarms | SBP below 90, SpO2 below 92, MEP below 80, HR above 120 |
+
+The monitor draws a synthetic ECG at the current heart rate, which is also the rate the arteries pulse at. The pool is a
+translucent red volume that rises between the lobes, and an uncontrolled rupture shows a jet of drops from the dome.
+
 ## The six steps and the mentor (M3)
 
 Stages are pure functions of the field state (`procedure/stages.ts`), so a scripted learner can play them in a test

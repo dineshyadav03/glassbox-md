@@ -7,7 +7,7 @@ aneurysm through a pterional, transsylvian approach, seen through an operating m
 simplified, procedural 3D shapes and every number is invented** (see [DESIGN-NOTES.md](DESIGN-NOTES.md)). It is not
 connected to the Glassbox MD diagnostic pipeline or to any case.
 
-## Status: milestone M3 of M6
+## Status: milestone M4 of M6
 
 Done: the operating-microscope view of the field (folded lobes, the sylvian fissure that opens and closes, ICA, M1 and
 M2, A1, PCom, anterior choroidal artery, optic and oculomotor nerves, the 6.6 mm aneurysm with its bleb, the two
@@ -25,7 +25,11 @@ done, when something goes wrong, and when the temporary clip or the retraction h
 structure, point at it and press `I` (or click Identify, then the structure). The checks in step 6 only count after the
 clip is on.
 
-Next: vitals and bleeding (M4), clip evaluation, ICG and Doppler detail and the endoscope (M5), debrief, demo, English
+Also done (M4): a patient monitor (ECG, heart rate, blood pressure, SpO2, motor evoked potentials, blood loss, time, temporary-clip
+clock) that reacts to what you do. Bleeding pools in the field and hides it until you suction; a rupture needs suction, a
+temporary clip and then the clip. A long temporary occlusion lowers the MEP.
+
+Next: clip evaluation, ICG and Doppler detail and the endoscope (M5), debrief, demo, English
 and Japanese (M6). The plan is in [PLAN.md](PLAN.md).
 
 ## Run it

@@ -37,6 +37,39 @@ export const RULES = {
   /** Brain retraction: warn after this many seconds. */
   retractionWarnSeconds: 600,
 
+  /** Bleeding, in millilitres per second. A rupture is fast; a temporary clip on the carotid slows every leak. */
+  bleedOozeMlPerSecond: 0.03,
+  bleedBriskMlPerSecond: 0.4,
+  bleedRuptureMlPerSecond: 10,
+  tempClipBleedFactor: 0.2,
+  /** Pool units added per millilitre, the most the pool can hold, and the level at which it hides the field. */
+  poolPerMl: 0.5,
+  poolMax: 20,
+  obstructedAtPool: 8,
+
+  /** Vital signs: baseline, how far blood loss moves them, and the lines that raise an alarm. */
+  vitals: {
+    hr: 72,
+    sbp: 118,
+    dbp: 74,
+    spo2: 99,
+    hrRise: 60,
+    sbpFall: 65,
+    dbpFall: 35,
+    spo2Fall: 9,
+    /** Blood loss at which compensation fails (the fraction is loss divided by this). */
+    hypovolaemiaMl: 1500,
+    tauSeconds: 20,
+    /** The MEP starts to fall after this long on the temporary clip, then falls and recovers at these rates (% per second). */
+    mepGraceSeconds: 90,
+    mepDropPerSecond: 0.25,
+    mepRecoverPerSecond: 0.4,
+    lowSbp: 90,
+    lowSpo2: 92,
+    lowMep: 80,
+    highHr: 120,
+  },
+
   /** Aneurysm clip limits. */
   clipAngleLimitDeg: 90,
   clipAngleStepDeg: 10,
