@@ -5,13 +5,12 @@ export type ToolId = 'suction' | 'scissors' | 'bipolar' | 'dissector' | 'spatula
 
 export interface ToolDef {
   readonly id: ToolId;
-  /** In the current language. */
   readonly name: string;
   /** The key that picks it: 1 to 9, then 0. */
   readonly key: string;
   /** Held down while the pointer is pressed (true) or applied by a single click (false). */
   readonly hold: boolean;
-  /** One line shown when the tool is picked, in the current language. */
+  /** One line shown when the tool is picked. */
   readonly hint: string;
 }
 

@@ -1,6 +1,6 @@
 # Plan: Brain Surgery Simulator (aneurysm clipping), for approval
 
-**Status: approved with the fastest defaults (D1 copy, D2 English+Japanese, D3 no reviewer, D4 straight+curved clips, D5 before the Atlas). All of M0 to M6 are done.**
+**Status: approved with the fastest defaults (D1 copy, D2 English+Japanese, D3 no reviewer, D4 straight+curved clips, D5 before the Atlas). All of M0 to M6 are done. **Update: Japanese was removed afterwards. It came from the build guide, was never asked of this project, and was not clearly put to the user. The simulator is English only.**
 
 Source: the "Build a Brain Surgery Simulator in Your Browser" build guide you pasted (the prompt and milestones).
 Where it will live: `neurolab/` in this repository, served by the Glassbox MD app at `/neurolab/`, the same way
@@ -10,8 +10,8 @@ the cath lab is served at `/cathlab/`. Not connected to the diagnostic pipeline.
 
 A browser simulator of microsurgical clipping of a right internal carotid to posterior communicating artery
 (IC-PC) aneurysm through a pterional, transsylvian approach: an operating-microscope view, six stages, ten tools,
-live vitals, bleeding and rupture, clip evaluation by ICG and Doppler, a debrief, a demo mode, and English and
-Japanese.
+live vitals, bleeding and rupture, clip evaluation by ICG and Doppler, a debrief, and a demo mode. (The original
+plan also listed Japanese; it was built and then removed, see the status line.)
 
 It must say on its start screen, in the README and on the debrief that it is **educational only, not clinical
 training, not a medical device, not medical advice**, and that the anatomy is simplified, procedural 3D shapes. Same
@@ -51,7 +51,7 @@ risk that no amount of testing on my side removes.
 | `cathlab.py` (mount behind the login, redirect, path guard) | Generalise to serve several labs |
 
 New work: the microscope look, procedural brain and arachnoid, ten tool behaviours, bleeding and pooling, the clip
-model and its evaluation, the Doppler/ICG/endoscope views, Japanese.
+model and its evaluation, the Doppler/ICG/endoscope views.
 
 **Decision needed (section 8, D1):** the reusable pieces currently live inside `simulator/`. Either I move them into a
 small `shared/` folder both apps import (cleaner; touches the cath lab, whose 552 tests would guard it), or I copy what
@@ -100,7 +100,7 @@ Each is runnable, tested, committed on its own, and I stop and tell you what to 
 | **M3** | Stage engine, checklist, mentor panel | sub-tasks tick; stages unlock; a scripted learner completes stages 1-4 |
 | **M4** | Vitals and bleeding | vitals react to injury; rupture needs suction + temporary clip + clip; physiology tests |
 | **M5** | Clipping, ICG, Doppler, endoscope | clip placement/evaluation tests; Doppler tone only on flowing vessels |
-| **M6** | Debrief, demo, English/Japanese, polish, README/CI | demo ends on an Excellent debrief with no console errors; both languages complete |
+| **M6** | Debrief, demo, polish, README/CI (English/Japanese was in this row; removed) | demo ends on an Excellent debrief with no console errors |
 
 ## 6. Risks I can already see
 
@@ -110,8 +110,8 @@ Each is runnable, tested, committed on its own, and I stop and tell you what to 
 - **Depth of field with transparency.** Semi-transparent arachnoid plus a blur pass often misbehaves; I would prototype
   that first in M1 and fall back to a simpler focus effect if it does.
 - **Blood.** A particle system plus a rising pool must stay at a good frame rate; I would measure rather than guess.
-- **Japanese.** I can write it, but a native reader should check it before it is called good. The language toggle will
-  be tested for *completeness* (every key has both languages), not for quality.
+- **Japanese (removed).** It was in this plan from the build guide; it was built and then removed because it was never asked
+  of this project.
 - **Verification.** As with the cath lab, the browser pane here only paints when a screenshot is taken, so I verify
   visuals by eye and logic by tests, and I will say plainly which is which. Sound is verified against a fake audio
   context, not by ear.
@@ -124,8 +124,7 @@ assessment standard. Thresholds and weights will be labelled teaching choices, a
 ## 8. Decisions I need from you
 
 - **D1.** Shared code: extract into `shared/` first (recommended) or copy?
-- **D2.** Languages: English and Japanese as the guide says. Do you want any others, and can you get a native Japanese
-  reader to review?
+- **D2.** Languages: the guide said English and Japanese. (Resolved: English only, Japanese removed.)
 - **D3.** Is there a clinician (or a med-student friend, as the guide suggests) who can review stage rules and scoring?
 - **D4.** Clip variants: straight and curved as in the guide, or more?
 - **D5.** Order: this before or after the Human Atlas plan?

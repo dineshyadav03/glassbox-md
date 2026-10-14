@@ -19,7 +19,7 @@ export function strainWord(stress: number): { text: string; tone: Row['tone'] } 
   return { text: t('val.strain.low'), tone: 'normal' };
 }
 
-/** A clip's variant, angle and depth as one phrase in the current language. */
+/** A clip's variant, angle and depth as one phrase. */
 export function clipSummary(setup: { variant: 'straight' | 'curved'; angleDeg: number; depth: number }): string {
   return t('val.clip', { variant: t(`variant.${setup.variant}` as MessageKey), angle: setup.angleDeg, depth: pct(setup.depth) });
 }

@@ -12,8 +12,6 @@ export const EN = {
   'start.enter': 'Enter the operating room',
   'start.demo': 'Watch a demo first',
   'start.demoTitle': 'An autopilot performs the whole case, narrating each step. Press any key or click to take over.',
-  'start.language': '日本語',
-  'start.languageTitle': 'Switch to Japanese',
 
   // --- top bar and panels ---------------------------------------------------------------------------------------
   'bar.title': 'Brain Surgery',
@@ -24,8 +22,6 @@ export const EN = {
   'bar.reset': 'Reset view',
   'bar.finish': 'Finish case',
   'bar.leave': 'Leave',
-  'bar.language': '日本語',
-  'bar.languageTitle': 'Switch to Japanese',
   'panel.case': 'The case',
   'panel.mentor': 'Mentor',
   'panel.field': 'The field',

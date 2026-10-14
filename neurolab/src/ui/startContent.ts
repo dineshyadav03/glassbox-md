@@ -1,4 +1,4 @@
-/** The words on the start screen, in the current language. Kept apart from the DOM code so a test can check the disclaimer is always there. */
+/** The words on the start screen. Kept apart from the DOM code so a test can check the disclaimer is always there. */
 import { t } from '../i18n';
 
 export const eyebrow = (): string => t('start.eyebrow');

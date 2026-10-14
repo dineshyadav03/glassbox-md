@@ -444,7 +444,7 @@ healthcare/
 │       ├── diagnostic_prediction.py Structured differential via OpenRouter (done)
 │       └── explainability.py       Report assembly: model's self-reported reasoning + retrieved citations; separate SHAP demo (done)
 ├── simulator/                  the cath-lab PCI simulator (Vite + TypeScript), served by this app at /cathlab/
-├── neurolab/                   the brain-surgery (aneurysm clipping) simulator, served at /neurolab/; English and Japanese
+├── neurolab/                   the brain-surgery (aneurysm clipping) simulator, served at /neurolab/
 ├── scripts/
 │   ├── build_literature_index.py  offline: fetch PubMed, build the RAG index
 │   ├── eval_imaging.py            slow, networked: run + report the real-image evaluation
@@ -585,7 +585,7 @@ npm run build
 
 then restart the app. Without that build the menu entry says how to build it instead of
 leading to a dead link. The **brain-surgery simulator** (aneurysm clipping under the
-operating microscope, `neurolab/`, at `/neurolab/`, English and Japanese) is built and
+operating microscope, `neurolab/`, at `/neurolab/`) is built and
 served the same way: `cd neurolab && npm install && npm run build`, then restart. It is **not connected to the diagnostic pipeline**: it reads no
 case and writes nothing, and no patient report links to it, because it simulates a
 procedure with invented physiology and a link from a report could read as a recommendation.

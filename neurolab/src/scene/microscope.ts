@@ -29,7 +29,7 @@ export interface Microscope {
   resetView(): void;
   /** Fly to look at a point from the usual direction, `distance` mm away. */
   flyTo(point: readonly [number, number, number], distance: number): void;
-  /** Redraw the words in the view (labels, the endoscope caption, the description) after a language change. */
+  /** Redraw the words in the view (labels, the endoscope caption, the description) after its words change. */
   relabel(): void;
   /** Called once per frame with the seconds since the last one (at most 0.25). */
   onFrame: ((dt: number) => void) | null;

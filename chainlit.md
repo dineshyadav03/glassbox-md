@@ -27,6 +27,6 @@ each stage did:
 There is also an **educational cath-lab simulator** (start menu, or `/cathlab/`): a simplified teaching
 simulation of stenting a blocked artery, with invented numbers. It is not clinical training or medical
 advice, and it is not connected to the pipeline above or to any case. A second one, a brain-surgery
-(aneurysm clipping) simulator in English and Japanese, is at `/neurolab/` and follows the same rules.
+(aneurysm clipping) simulator, is at `/neurolab/` and follows the same rules.
 
 **Use synthetic or de-identified test data only.** See `data/README.md` in the repo for how test documents are generated.

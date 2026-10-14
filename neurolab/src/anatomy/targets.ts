@@ -36,7 +36,7 @@ export function classifyHit(name: string, point: Vec3, config: Config = ANATOMY)
   return { kind: 'none' };
 }
 
-/** A short name for what is under the pointer, in the current language, for the status line. */
+/** A short name for what is under the pointer, for the status line. */
 export function describeTarget(target: Target): string {
   switch (target.kind) {
     case 'none':

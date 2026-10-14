@@ -2,8 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { RULES } from '../src/config/rules';
 import { DemoRunner, demoPlan } from '../src/demo/autopilot';
 import { EN } from '../src/i18n/en';
-import { JA } from '../src/i18n/ja';
-import { getLang, loadLang, placeholders, saveLang, setLang, t, type MessageKey } from '../src/i18n';
+import { t, type MessageKey } from '../src/i18n';
 import { goodClip } from '../src/physics/clipEval';
 import { NO_CLIP_CAP, WEIGHTS, debrief, gradeFor, summarise, type CaseSummary } from '../src/procedure/debrief';
 import { act, initialField, tick, type Action, type FieldState, type Target } from '../src/procedure/field';
@@ -172,11 +171,10 @@ describe('the demo', () => {
     expect(runner.done).toBe(true);
   });
 
-  it('narrates with keys that exist in both languages, and names a tool for each held step', () => {
+  it('narrates with keys that exist, and names a tool for each held step', () => {
     for (const step of demoPlan()) {
       if (step.narration) {
         expect(EN[step.narration]).toBeTruthy();
-        expect(JA[step.narration]).toBeTruthy();
       }
       if (step.hold) expect(step.tool ?? 'previous').toBeTruthy();
     }
@@ -200,75 +198,22 @@ describe('the demo', () => {
   });
 });
 
-describe('the languages', () => {
-  it('have exactly the same keys, and every sentence is filled in', () => {
-    expect(Object.keys(JA).sort()).toEqual(Object.keys(EN).sort());
+describe('the sentences', () => {
+  it('are all filled in, and every {placeholder} is a plain name', () => {
     for (const key of Object.keys(EN) as MessageKey[]) {
       expect(EN[key].length, key).toBeGreaterThan(0);
-      expect(JA[key].length, key).toBeGreaterThan(0);
+      for (const match of EN[key].matchAll(/\{([^}]*)\}/g)) expect(match[1], key).toMatch(/^\w+$/);
     }
   });
 
-  it('keep the same {placeholders} in each sentence', () => {
-    for (const key of Object.keys(EN) as MessageKey[]) expect(placeholders(JA[key]), key).toEqual(placeholders(EN[key]));
-  });
-
-  it('are really translated: almost no Japanese sentence equals its English one', () => {
-    const same = (Object.keys(EN) as MessageKey[]).filter((k) => EN[k] === JA[k] && /[A-Za-z]{4,}/.test(EN[k]));
-    // Short labels such as "SpO2", "A1", "M1", "MEP", "ICG" are the same in both.
-    expect(same.length).toBeLessThan(12);
-  });
-
-  it('keep the educational-only wording on the start screen in both languages', () => {
-    for (const lang of ['en', 'ja'] as const) {
-      setLang(lang);
-      expect(t('start.disclaimer').length).toBeGreaterThan(60);
-    }
-    setLang('en');
-    for (const phrase of ['not clinical training', 'not a medical device', 'not medical advice', 'invented']) expect(EN['start.disclaimer']).toContain(phrase);
-    for (const phrase of ['臨床訓練', '医療機器', '医学的助言', '架空']) expect(JA['start.disclaimer']).toContain(phrase);
-  });
-
-  it('switch the words everything else reads, and fall back to English when a key is missing', () => {
-    setLang('ja');
-    expect(getLang()).toBe('ja');
-    expect(t('tool.suction.name')).toBe('吸引');
-    expect(t('mn.stepComplete', { n: 2, title: 'M1' })).toBe('手順 2 完了：M1。');
-    setLang('en');
+  it('fill in placeholders, and leave one that was not given as written', () => {
     expect(t('mn.stepComplete', { n: 2, title: 'M1' })).toBe('Step 2 complete: M1.');
     expect(t('ev.identified', {})).toBe('That is: {name}.');
+    expect(t('ev.sealed')).toBe('Sealed.');
   });
 
-  it('give the debrief, the stages and the tools in Japanese when asked', () => {
-    setLang('ja');
-    const d = debrief(baseSummary);
-    expect(d.gradeLabel).toBe('優秀');
-    expect(d.tips[0]).toBe(JA['tip.clean']);
-    setLang('en');
-  });
-
-  it('remember the choice when storage works, and cope when it does not', () => {
-    const store = new Map<string, string>();
-    const original = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
-    Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: { getItem: (k: string) => store.get(k) ?? null, setItem: (k: string, v: string) => void store.set(k, v) } });
-    try {
-      saveLang('ja');
-      expect(loadLang()).toBe('ja');
-      saveLang('en');
-      expect(loadLang()).toBe('en');
-    } finally {
-      if (original) Object.defineProperty(globalThis, 'localStorage', original);
-      else delete (globalThis as { localStorage?: unknown }).localStorage;
-    }
-    expect(() => saveLang('ja')).not.toThrow();
-    expect(['en', 'ja']).toContain(loadLang());
-  });
-});
-
-describe('the placeholders helper', () => {
-  it('lists names once each in order', () => {
-    expect(placeholders('{b} and {a} and {a}')).toEqual(['a', 'a', 'b']);
-    expect(placeholders('none')).toEqual([]);
+  it('keep the educational-only wording on the start screen', () => {
+    for (const phrase of ['not clinical training', 'not a medical device', 'not medical advice', 'invented']) expect(EN['start.disclaimer']).toContain(phrase);
   });
 });
 

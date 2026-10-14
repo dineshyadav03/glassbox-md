@@ -1,5 +1,5 @@
 .lab { height: 100dvh; min-height: 560px; display: grid; grid-template-rows: auto minmax(0, 1fr) auto; background: #07030a; color: #e9e6f0;
-  font: 15px/1.45 system-ui, 'Segoe UI', 'Hiragino Sans', 'Yu Gothic', sans-serif; }
+  font: 15px/1.45 system-ui, 'Segoe UI', sans-serif; }
 .lab-bar { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; padding: 8px 14px; background: #120d1a; border-bottom: 1px solid #2c2340; }
 .brand { white-space: nowrap; }
 .brand span { color: #9d95b8; }

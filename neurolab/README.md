@@ -35,13 +35,11 @@ and leaves the arteries glowing; a bad one does not. Hold the Doppler on a vesse
 
 Also done (M6): a debrief that scores the case (clip result, rupture, blood loss, temporary occlusion, injuries, steps,
 retraction time) with an Excellent / Good / Fair / Needs work grade and tips; a narrated demo that performs the whole case
-and ends on an Excellent debrief (press any key or click to take over); and English and Japanese throughout, switchable
-on the start screen and in the lab. The Japanese has been checked for completeness only, not for quality: please have a
-native reader, ideally a clinician, review it. The plan is in [PLAN.md](PLAN.md).
+and ends on an Excellent debrief (press any key or click to take over). It is English only. The plan is in [PLAN.md](PLAN.md).
 
-| The debrief after the demo | Japanese, with the ICG view | A rupture: pool, jet and monitor |
-|---|---|---|
-| ![The debrief: Excellent, 100 out of 100](docs/screenshots/debrief-excellent.jpg) | ![The lab in Japanese with the fluorescence view](docs/screenshots/japanese-icg.jpg) | ![A ruptured aneurysm with a pool of blood and the patient monitor](docs/screenshots/rupture-and-monitor.jpg) |
+| The debrief after the demo | A rupture: pool, jet and monitor |
+|---|---|
+| ![The debrief: Excellent, 100 out of 100](docs/screenshots/debrief-excellent.jpg) | ![A ruptured aneurysm with a pool of blood and the patient monitor](docs/screenshots/rupture-and-monitor.jpg) |
 
 ## Run it
 

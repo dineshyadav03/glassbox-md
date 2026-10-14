@@ -10,7 +10,7 @@ function el<K extends keyof HTMLElementTagNameMap>(tag: K, text?: string, classN
 
 const STYLE = `
 .start { min-height: 100vh; box-sizing: border-box; display: grid; place-content: center; gap: 14px; padding: 32px 20px;
-  color: #e7e9f2; font: 16px/1.5 system-ui, 'Segoe UI', 'Hiragino Sans', 'Yu Gothic', sans-serif; max-width: 760px; margin: 0 auto; }
+  color: #e7e9f2; font: 16px/1.5 system-ui, 'Segoe UI', sans-serif; max-width: 760px; margin: 0 auto; }
 .start .eyebrow { margin: 0; color: #8f9ad6; letter-spacing: .08em; text-transform: uppercase; font-size: 12px; }
 .start h1 { margin: 0; font-size: clamp(34px, 7vw, 56px); line-height: 1.05; }
 .start h1 span { display: block; color: #9aa6ee; font-weight: 500; font-size: .55em; margin-top: 6px; }
@@ -22,15 +22,12 @@ const STYLE = `
 .start button:hover { border-color: #6b5b9a; }
 .start button.primary { font-weight: 600; border-color: #67b7a6; background: #14383a; color: #e9fffa; }
 .start button.primary:hover { background: #1b4a4c; }
-.start .lang { justify-self: start; padding: 4px 12px; font-size: 13px; }
 .start .foot { margin: 0; color: #8b90ab; font-size: 14px; }
 `;
 
 export interface StartHandlers {
   readonly onEnter: () => void;
   readonly onDemo: () => void;
-  /** Called after the language was switched; the screen is drawn again by the caller. */
-  readonly onLanguage: () => void;
 }
 
 /** Render the start screen into `root`. Text is set with textContent only, never innerHTML. */
@@ -40,10 +37,6 @@ export function renderStartScreen(root: HTMLElement, handlers: StartHandlers): v
   const demo = el('button', t('start.demo'));
   demo.title = t('start.demoTitle');
   demo.addEventListener('click', handlers.onDemo);
-  const language = el('button', t('start.language'), 'lang');
-  language.title = t('start.languageTitle');
-  language.setAttribute('lang', t('start.language') === 'English' ? 'en' : 'ja');
-  language.addEventListener('click', handlers.onLanguage);
 
   const style = el('style');
   style.textContent = STYLE;
@@ -55,6 +48,6 @@ export function renderStartScreen(root: HTMLElement, handlers: StartHandlers): v
   const buttons = el('div', undefined, 'cta');
   buttons.append(enter, demo);
   const main = el('main', undefined, 'start');
-  main.append(language, el('p', eyebrow(), 'eyebrow'), heading, el('p', tagline(), 'tagline'), buttons, notice, el('p', buildStatus(), 'foot'));
+  main.append(el('p', eyebrow(), 'eyebrow'), heading, el('p', tagline(), 'tagline'), buttons, notice, el('p', buildStatus(), 'foot'));
   root.replaceChildren(style, main);
 }

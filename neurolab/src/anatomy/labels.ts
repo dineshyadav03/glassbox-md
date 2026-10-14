@@ -1,6 +1,6 @@
 /**
  * Anatomy labels: where each one sits and what it says. Built from the config's vessels, so a label always sits
- * on the structure it names after a config edit. (English only for now; M6 moves the text into the language files.)
+ * on the structure it names after a config edit.
  */
 import { ANATOMY } from '../config/anatomy';
 import { t, type MessageKey } from '../i18n';

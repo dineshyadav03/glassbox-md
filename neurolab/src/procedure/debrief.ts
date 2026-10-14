@@ -1,7 +1,7 @@
 /**
  * The debrief: a teaching score for a case, as pure functions. `summarise` reads the field state into a few plain facts;
  * `debrief` turns those into scored items, a grade and tips. The weights and thresholds are teaching choices, not an
- * assessment standard (see DESIGN-NOTES.md), and the wording comes from the language tables.
+ * assessment standard (see DESIGN-NOTES.md), and the wording comes from the sentence table.
  */
 import { RULES } from '../config/rules';
 import { t } from '../i18n';

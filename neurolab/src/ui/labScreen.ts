@@ -3,7 +3,7 @@ import { DopplerSound, type AudioContextLike } from '../audio/doppler';
 import { ANATOMY } from '../config/anatomy';
 import { RULES } from '../config/rules';
 import { DemoRunner } from '../demo/autopilot';
-import { getLang, saveLang, setLang, t, type MessageKey } from '../i18n';
+import { t, type MessageKey } from '../i18n';
 import { act, dopplerReading, flowing, initialField, tick, type Action, type FieldEvent, type FieldState } from '../procedure/field';
 import { debrief, summarise } from '../procedure/debrief';
 import { adviceNow, notesFor, type MentorNote } from '../procedure/mentor';
@@ -30,8 +30,6 @@ const DEMO_SPEEDS = [1, 2, 4] as const;
 export interface LabOptions {
   /** Start with the autopilot performing the case. */
   readonly demo: boolean;
-  /** Called when the language is switched, so the caller can keep other screens in step. */
-  readonly onLanguage?: () => void;
 }
 
 /**
@@ -67,7 +65,7 @@ export function renderLabScreen(root: HTMLElement, onLeave: () => void, options:
     hooks.__field = () => field;
   }
 
-  // A button with a label that follows the language, and an optional key hint.
+  // A button with a label from the sentence table, and an optional key hint.
   const keyButton = (labelKey: MessageKey, key: string | null, onClick: () => void, className = 'ghost'): HTMLButtonElement => {
     const button = node('button', className);
     const label = document.createTextNode('');
@@ -102,19 +100,16 @@ export function renderLabScreen(root: HTMLElement, onLeave: () => void, options:
   soundButton.classList.add('on');
   const reset = keyButton('bar.reset', 'R', () => scope?.resetView());
   const finish = keyButton('bar.finish', null, () => openDebrief(), 'ghost finish');
-  const language = keyButton('bar.language', null, () => switchLanguage());
   const leave = keyButton('bar.leave', null, () => {
     dispose();
     onLeave();
   });
-  buttons.append(labelsButton, soundButton, reset, finish, language, leave);
+  buttons.append(labelsButton, soundButton, reset, finish, leave);
   bar.append(brand, note, buttons);
   refreshers.push(() => {
     brandTitle.textContent = t('bar.title');
     brandSub.textContent = t('bar.subtitle');
     note.textContent = t('bar.note');
-    language.title = t('bar.languageTitle');
-    language.setAttribute('lang', getLang() === 'en' ? 'ja' : 'en');
   });
 
   // --- the steps panel (left) --------------------------------------------------------------------------------------------
@@ -303,7 +298,7 @@ export function renderLabScreen(root: HTMLElement, onLeave: () => void, options:
     const again = node('button', undefined, t('debrief.again'));
     again.addEventListener('click', () => {
       dispose();
-      renderLabScreen(root, onLeave, { demo: false, ...(options.onLanguage ? { onLanguage: options.onLanguage } : {}) });
+      renderLabScreen(root, onLeave, { demo: false });
     });
     const out = node('button', undefined, t('debrief.leave'));
     out.addEventListener('click', () => {
@@ -379,9 +374,8 @@ export function renderLabScreen(root: HTMLElement, onLeave: () => void, options:
     armIdentify(false);
   }
 
-  // --- language -------------------------------------------------------------------------------------------------------------------
+  // --- filling in the words -----------------------------------------------------------------------------------------------------
   function refreshText(): void {
-    document.documentElement.lang = getLang();
     for (const refresh of refreshers) refresh();
     toolHint.textContent = `${TOOL_BY_ID[tool].name}: ${TOOL_BY_ID[tool].hint}`;
     monitor.relabel();
@@ -390,13 +384,6 @@ export function renderLabScreen(root: HTMLElement, onLeave: () => void, options:
     renderSteps();
     renderMentor();
     if (debriefOpen) renderDebrief();
-  }
-  function switchLanguage(): void {
-    const next = getLang() === 'en' ? 'ja' : 'en';
-    setLang(next);
-    saveLang(next);
-    refreshText();
-    options.onLanguage?.();
   }
 
   // --- the demo ---------------------------------------------------------------------------------------------------------------------

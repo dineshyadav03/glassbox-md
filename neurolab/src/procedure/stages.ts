@@ -4,8 +4,8 @@
  * something the state already remembers (what was cut, the most the fissure was opened, what was identified, the checks
  * made after clipping), so stepping back never un-ticks a step except taking the clip off.
  *
- * The words (titles, reasons, task texts and hints) live in the language tables under `stage.N.*` and `task.ID.*`;
- * the getters here read them in whatever language is current.
+ * The words (titles, reasons, task texts and hints) live in the sentence table under `stage.N.*` and `task.ID.*`;
+ * the getters here read them from there.
  */
 import { RULES } from '../config/rules';
 import { t, type MessageKey } from '../i18n';

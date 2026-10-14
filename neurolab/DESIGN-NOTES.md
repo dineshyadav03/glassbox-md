@@ -43,7 +43,7 @@ sees. The aneurysm now points mostly outward (lateral) and down, with only a lit
 What a tool does not do yet: bleeding has no effect on vitals (M4); the clip is recorded but not evaluated (M5); the
 Doppler gives a text reading, not a tone (M5).
 
-## Debrief, demo and languages (M6)
+## Debrief and demo (M6)
 
 **Debrief** (`procedure/debrief.ts`, pure). Teaching weights, not an assessment standard; they add to 100:
 
@@ -66,12 +66,10 @@ Tests cover a clean case, a rupture, a bad clip (open, pinched, narrowed), a lon
 anything a learner could not. A test plays it against the engine at 10, 30 and 120 frames a second and requires every
 step done, no injuries and an Excellent debrief; it takes about 45 s of case time. Any key or click on the view takes over.
 
-**Languages.** Every sentence is looked up by key in `i18n/en.ts` (the source of truth) or `i18n/ja.ts`. The compiler
-requires the Japanese table to have every key, and a test checks the keys match, every sentence is filled in, the
-`{placeholders}` are the same, and almost nothing is left in English. What a test cannot judge is whether the Japanese is
-good: I wrote it, it needs a native reader, and clinical wording in particular should be checked by a clinician. Switching
-language redraws the screen and keeps the case; the mentor's log keeps the language each note was written in. The choice
-is remembered in the browser when storage allows it.
+**Words.** Every sentence the learner reads is looked up by key in `i18n/en.ts`, so the code that builds the screens, the
+mentor's notes and the debrief holds no prose. The simulator is English only. (A Japanese translation was built and then
+removed on request: it came from the original build guide, not from a need of this project. It is in the git history, in
+commit 4cc8090, if it is ever wanted.)
 
 ## Judging the clip (M5)
 
@@ -151,11 +149,10 @@ Stages are pure functions of the field state (`procedure/stages.ts`), so a scrip
 
 - Anatomy labels are always shown when on, even for structures the closed lobes hide. Hiding them by occlusion belongs
   with the stages (M3), when "identify this structure" becomes a task.
-- Labels and the start screen are English only; Japanese arrives in M6.
 - The membrane ovals look like panes rather than strands. A better look is a texture task for the polish milestone.
 
 ## Verification
 
-Geometry and rules are tested in node (199 tests): aneurysm size and its config edit, branch connections, label
+Geometry and rules are tested in node (193 tests): aneurysm size and its config edit, branch connections, label
 placement, fold height bounds, fissure opening, membrane cutting, pulse swelling, camera maths. What the picture looks
 like is checked by eye in the browser; I say so plainly rather than claim a test proves it looks right.
