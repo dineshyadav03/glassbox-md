@@ -92,7 +92,7 @@ or writes patient data, and it is deliberately not connected to the diagnostic p
   redaction needs to keep to the rule by construction, not rely on that check.
 - **Update the README, not just the code**, when you change scope,
   fix a real bug, or hit a real limitation worth documenting. The
-  [Status](README.md#status) and [Known limitations](README.md#known-limitations)
+  [Known limitations](README.md#known-limitations) section and the [engineering notes](docs/ENGINEERING-NOTES.md)
   sections are written to stay honest about what does and doesn't work --
   new work should follow that same rhythm rather than only describing the
   happy path.
